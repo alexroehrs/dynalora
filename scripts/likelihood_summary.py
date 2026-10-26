@@ -7,7 +7,7 @@ import sys
 import numpy as np
 import pandas as pd
 
-files = sorted(glob.glob(sys.argv[1] + '/ll__*.csv.gz'))
+files = sorted(glob.glob(sys.argv[1] + '/ll*__*.csv.gz'))
 d = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
 rng = np.random.default_rng(0)
 rows = []

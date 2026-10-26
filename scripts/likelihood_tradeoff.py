@@ -49,8 +49,16 @@ def eval_texts(cfg_name, n_domain, n_general, smoke=False):
     held = cfg['heldout'][-n_domain:]          # held-out texts, never used in training
     if cfg_name == 'imdb_bal_nohtml':
         held = [re.sub(r'\s+', ' ', _HTML.sub(' ', t)) for t in held]
-    general = D.generic_texts(2000 + n_general)[2000:]   # disjoint from the classifier's generic texts
+    general = _wikitext_train(n_general)   # disjoint from the test-split paragraphs used by the classifier
     return held, general
+
+
+def _wikitext_train(n):
+    from datasets import load_dataset
+    ds = load_dataset('Salesforce/wikitext', 'wikitext-103-raw-v1', split='train[:50000]')
+    out = [r['text'].strip() for r in ds if len(r['text'].strip()) > 200 and not r['text'].startswith(' =')]
+    assert len(out) >= n, len(out)
+    return out[:n]
 
 
 @torch.no_grad()
@@ -115,29 +123,36 @@ def main():
     ap.add_argument('--max_len', type=int, default=128)
     ap.add_argument('--batch_size', type=int, default=16)
     ap.add_argument('--lambdas', nargs='+', type=float, default=LAMBDAS)
+    ap.add_argument('--sets', nargs='+', default=['domain', 'general'], choices=['domain', 'general'])
     ap.add_argument('--smoke', action='store_true')
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     mtag = os.path.basename(a.model.rstrip('/'))
     for cname in a.configs:
-        path = os.path.join(a.out, f'll__{mtag}__{cname}.csv.gz')
-        if os.path.exists(path):
-            log(f'{path} exists, skipping'); continue
+        todo = []
+        for st in a.sets:
+            path = os.path.join(a.out, f"{'ll' if st == 'domain' else 'llgen'}__{mtag}__{cname}.csv.gz")
+            if os.path.exists(path):
+                log(f'{path} exists, skipping')
+            else:
+                todo.append((st, path))
+        if not todo:
+            continue
         adir = os.path.join(a.adapters_dir, f'{mtag}__{cname}')
         log(f'loading {a.model} + {adir}')
         gen = Generator(a.model, adir)
         dom, general = eval_texts(cname, a.n_domain, a.n_general, a.smoke)
-        rows = score(gen, dom, 'domain', a.lambdas, a.batch_size, a.max_len)
-        log(f'{cname}: domain scored ({len(dom)} texts)')
-        rows += score(gen, general, 'general', a.lambdas, a.batch_size, a.max_len)
-        log(f'{cname}: general scored ({len(general)} texts)')
-        df = pd.DataFrame(rows, columns=['set', 'text_id', 'method', 'lambda', 'nll_sum', 'n_tokens', 'kl_sum'])
-        df.insert(0, 'model', mtag); df.insert(0, 'config', cname)
-        df.to_csv(path, index=False)
-        s = df.groupby(['set', 'method', 'lambda'])[['nll_sum', 'n_tokens', 'kl_sum']].sum()
-        s['ppl'] = (s.nll_sum / s.n_tokens).map(lambda x: round(float(torch.tensor(x).exp()), 2))
-        s['kl_per_token'] = (s.kl_sum / s.n_tokens).round(4)
-        print(s[['ppl', 'kl_per_token']].unstack('set').to_string(), flush=True)
+        for st, path in todo:
+            texts = dom if st == 'domain' else general
+            rows = score(gen, texts, st, a.lambdas, a.batch_size, a.max_len)
+            log(f'{cname}: {st} scored ({len(texts)} texts)')
+            df = pd.DataFrame(rows, columns=['set', 'text_id', 'method', 'lambda', 'nll_sum', 'n_tokens', 'kl_sum'])
+            df.insert(0, 'model', mtag); df.insert(0, 'config', cname)
+            df.to_csv(path, index=False)
+            g = df.groupby(['method', 'lambda'])[['nll_sum', 'n_tokens', 'kl_sum']].sum()
+            g['ppl'] = (g.nll_sum / g.n_tokens).map(lambda x: round(float(torch.tensor(x).exp()), 2))
+            g['kl_per_token'] = (g.kl_sum / g.n_tokens).round(4)
+            print(g[['ppl', 'kl_per_token']].unstack('method').to_string(), flush=True)
         del gen
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
