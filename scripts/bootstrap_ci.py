@@ -51,7 +51,7 @@ def ci_table(d, B=2000, seed=0):
             g = g.assign(prompt_id=np.arange(len(g)))  # independent texts
         idx = _boot_idx(g, B, rng)
         for m in METRICS:
-            if m not in g or (m != 'ppl_ext' and g[m].isna().all()):
+            if m != 'ppl_ext' and (m not in g or g[m].isna().all()):
                 continue
             est = _stat(g, m)
             bs = np.array([_stat(g.iloc[i], m) for i in idx])
@@ -69,7 +69,7 @@ def paired_diff(d, a, b, B=2000, seed=0):
     idx = _boot_idx(ga, B, rng)
     out = {}
     for m in METRICS:
-        if m not in ga or (m != 'ppl_ext' and ga[m].isna().all()):
+        if m != 'ppl_ext' and (m not in ga or ga[m].isna().all()):
             continue
         est = _stat(gb, m) - _stat(ga, m)
         bs = np.array([_stat(gb.iloc[i], m) - _stat(ga.iloc[i], m) for i in idx])
