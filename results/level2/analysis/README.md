@@ -1,0 +1,3 @@
+# Derived tables of the revision
+
+Produced by `scripts/analysis/`. `eqdiv.csv`: for each adapter and weight-space lambda (`lam_w`), the logit-space lambda with the same domain-text KL (`lam_star`) and the perplexity differences logit minus weight on domain text (`d_dom`), on general text with the domain KL axis (`d_gen_domKL`) and with the general KL axis (`d_gen_genKL`), with 95% paired bootstrap intervals. `bench_eq.csv`: mean zero-shot accuracy (LAMBADA, HellaSwag acc_norm, PIQA, ARC-Easy) of both forms at equal general-text KL. `entmatch.csv` / `entci.csv`: DynaLoRA vs the plain adapter at matched mean entropy. `curves_ci.csv`: response-curve intervals.
