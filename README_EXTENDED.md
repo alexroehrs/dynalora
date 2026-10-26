@@ -12,7 +12,8 @@ scripts/run_all.py   end-to-end run (train adapters, generate, evaluate, summari
 scripts/level1_original_generations.py   metrics over the original released generations
 notebooks/colab_run_all.ipynb            Colab driver (GPU)
 results/level1/      metrics computed over the original 840 generations
-results/level2/      outputs of run_all.py (generations, per-row metrics, summary tables)
+results/level2/gpt2/ GPT-2 small: summary tables, entropy-matched ablation, per-generation metrics (gzipped)
+results/level2/qwen/ Qwen2.5-0.5B (balanced IMDB): same files
 ```
 
 ## Methods compared
@@ -38,6 +39,13 @@ identical rule for all domains), perplexity of the continuation under an externa
 classifier trained on held-out human texts of all domains plus generic text, positive probability
 under an SST-2 sentiment classifier (review domains), dist-1/2/3, and the mean entropy of the
 sampling distribution, used to match temperatures between DynaLoRA and the plain adapter.
+
+## Runs reported in the article
+
+Both runs were executed on a Google Colab T4 (Python 3.13, PyTorch 2.11, transformers 5.20,
+peft 0.21, datasets 4.8, scikit-learn 1.6) with 20 samples x 10 prompts per grid point:
+42,000 generations for GPT-2 small (five configurations) and 8,400 for Qwen2.5-0.5B.
+`run_info.json` in each results folder records the arguments and the domain-classifier accuracy.
 
 ## Running
 
