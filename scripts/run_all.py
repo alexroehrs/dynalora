@@ -11,6 +11,14 @@ classifier fitted on the same domains as the main GPT-2 run:
         --configs imdb_bal__lr5e-06 imdb_bal__lr1.5e-05 imdb_bal__lr5e-05 imdb_bal__lr1e-04 \
         --methods dynalora --clf_configs imdb_bal yelp pubmed
 
+Replication over training seeds (suffix ``__seed<n>``: same corpus sample, different
+initialization and data order) and on a larger base model:
+    python scripts/run_all.py --out results/level2/seeds --models gpt2 \
+        --configs imdb_bal__seed43 imdb_bal__seed44 pubmed__seed43 pubmed__seed44 \
+        --methods dynalora weight --clf_configs imdb_bal yelp pubmed
+    python scripts/run_all.py --out results/level2/qwen15 --models Qwen/Qwen2.5-1.5B \
+        --configs imdb_bal pubmed --methods dynalora weight --clf_configs imdb_bal yelp pubmed
+
 Plain adapter on a finer temperature grid, for the continuous entropy-matched ablation,
 reusing the adapters of the main run:
     python scripts/run_all.py --out results/level2/temps_gpt2 --adapters_dir results/level2/gpt2/adapters \
