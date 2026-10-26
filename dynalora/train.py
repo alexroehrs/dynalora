@@ -119,7 +119,7 @@ def train_adapter(model_name, texts, out_dir, lr=2e-4, epochs=3, max_len=128, ba
         best = vl; model.save_pretrained(out_dir)
     tok.save_pretrained(out_dir)
     with open(os.path.join(out_dir, 'train_log.txt'), 'w') as f:
-        f.write(f'model={model_name} lr={lr} epochs={epochs} mask_pad={mask_pad} r={r} alpha={alpha} '
+        f.write(f'model={model_name} lr={lr} epochs={epochs} mask_pad={mask_pad} r={r} alpha={alpha} seed={seed} '
                 f'n_train={len(tr_t)} n_val={len(val_t)} best_val_loss={best:.4f} best_ppl={math.exp(best):.2f}\n')
         for s, v in history:
             f.write(f'{s}\t{v:.4f}\n')

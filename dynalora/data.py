@@ -98,11 +98,14 @@ def base_name(name):
 
 
 def variant_hp(name):
-    """Training overrides encoded in a variant name, e.g. ``imdb_bal__lr1e-05`` -> {'lr': 1e-05}."""
+    """Training overrides encoded in a variant name, e.g. ``imdb_bal__lr1e-05`` -> {'lr': 1e-05},
+    ``pubmed__seed43`` -> {'seed': 43} (training seed only; the corpus sample is unchanged)."""
     hp = {}
     for part in name.split('__')[1:]:
         if part.startswith('lr'):
             hp['lr'] = float(part[2:])
+        elif part.startswith('seed'):
+            hp['seed'] = int(part[4:])
     return hp
 
 
