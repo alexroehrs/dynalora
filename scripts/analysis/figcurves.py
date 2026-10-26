@@ -5,7 +5,7 @@ c=pd.read_csv('results/level2/analysis/curves_ci.csv')
 A=[('gpt2','imdb_neg','GPT-2, IMDB negative','#2a78d6','o','-'),('gpt2','imdb_bal','GPT-2, IMDB balanced','#eb6834','s','-'),
    ('gpt2','imdb_bal_nohtml','GPT-2, IMDB no HTML','#1baf7a','^','-'),('gpt2','yelp','GPT-2, Yelp','#eda100','D','-'),
    ('gpt2','pubmed','GPT-2, PubMed','#e87ba4','v','-'),('Qwen2.5-0.5B','imdb_bal','Qwen2.5, IMDB balanced','#008300','P','--')]
-M=[('domain_prob_u','(a) Domain probability (%)'),('vocab_score','(b) Vocabulary score (%)'),('artifact','(c) HTML tag rate (%)'),('ppl2','(d) Perplexity under SmolLM2-1.7B')]
+M=[('domain_prob_u','(a) Domain probability (%)'),('vocab_score','(b) Vocabulary score (%)'),('fmt','(c) Corpus formatting rate (%)'),('ppl2','(d) Perplexity under SmolLM2-1.7B')]
 fig,axes=plt.subplots(2,2,figsize=(5.15,4.6))
 for k,(met,title) in enumerate(M):
     ax=axes[k//2,k%2]
@@ -13,7 +13,7 @@ for k,(met,title) in enumerate(M):
         g=c[(c.model==m)&(c.config==cfg)&(c.method=='dynalora')&(c.metric==met)].sort_values('lam')
         ax.fill_between(g.lam,g.lo,g.hi,color=col,alpha=0.15,lw=0)
         ax.plot(g.lam,g.est,color=col,marker=mk,ms=2.3,lw=1.0,ls=ls,label=lab)
-    if met in ('domain_prob_u','ppl2'):
+    if met in ('domain_prob_u','ppl2','fmt'):
         refs={}
         for m,cfg,lab,col,mk,ls in A:
             r=c[(c.config==cfg)&(c.method=='human')&(c.metric==met)&(c.model==('human:'+m if False else 'human'))]
