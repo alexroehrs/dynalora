@@ -1,0 +1,55 @@
+{
+  "args": {
+    "out": "/content/drive/MyDrive/dynalora_results/temps_qwen",
+    "models": [
+      "Qwen/Qwen2.5-0.5B"
+    ],
+    "configs": [
+      "imdb_bal"
+    ],
+    "n_samples": 20,
+    "lambdas": [
+      0.0,
+      0.25,
+      0.5,
+      0.75,
+      1.0,
+      1.25,
+      1.5,
+      1.75,
+      2.0,
+      2.25,
+      2.5,
+      2.75,
+      3.0
+    ],
+    "gammas": [
+      1.0,
+      1.5,
+      2.0,
+      3.0
+    ],
+    "temps": [
+      0.65,
+      0.55,
+      0.45,
+      0.35,
+      0.25
+    ],
+    "max_new_tokens": 50,
+    "ext_lm": "gpt2-large",
+    "no_ext": false,
+    "no_sentiment": false,
+    "skip_cfg": false,
+    "skip_weight": false,
+    "skip_temp": false,
+    "methods": [
+      "lora_temp"
+    ],
+    "adapters_dir": "/content/drive/MyDrive/dynalora_results/qwen/adapters",
+    "clf_configs": [],
+    "smoke": false
+  },
+  "domain_classifier_cv_accuracy": 0.9691130836400376,
+  "n_rows": 1200
+}
