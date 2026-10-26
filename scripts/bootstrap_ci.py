@@ -5,6 +5,10 @@ so that the dependence between generations of the same prompt is respected. Beca
 samples are paired by seed across lambda values, paired differences between two grid
 points are bootstrapped on the same resampled (prompt, sample) indices.
 
+Reference rows (method ``human``) are labelled ``human:<generator>`` so that the reference
+texts of different runs, scored by different classifier fits, are never pooled. Paired tests
+carry a Holm-adjusted p-value within each adapter and metric (``p_holm``).
+
 Usage: python scripts/bootstrap_ci.py --inputs results/level2/gpt2/metrics__*.csv.gz results/level2/qwen/metrics__*.csv.gz --out results/level2/stats
 """
 import argparse, glob, os
@@ -74,8 +78,10 @@ def paired_diff(d, a, b, B=2000, seed=0):
         est = _stat(gb, m) - _stat(ga, m)
         bs = np.array([_stat(gb.iloc[i], m) - _stat(ga.iloc[i], m) for i in idx])
         lo, hi = np.nanpercentile(bs, [2.5, 97.5])
+        if np.allclose(bs, 0) and est == 0:
+            continue  # metric identical at both grid points (e.g. no tags at all): nothing to test
         p = 2 * min((bs <= 0).mean(), (bs >= 0).mean())
-        out[m] = dict(diff=est, ci_low=lo, ci_high=hi, p_boot=max(p, 1 / B))
+        out[m] = dict(diff=est, ci_low=lo, ci_high=hi, p_boot=min(1.0, max(p, 1 / B)))
     return out
 
 
@@ -87,12 +93,19 @@ def main():
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     files = [f for p in a.inputs for f in glob.glob(p)]
-    d = _prep(pd.concat([pd.read_csv(f) for f in files], ignore_index=True))
+    parts = []
+    for f in files:
+        x = pd.read_csv(f)
+        gen_models = [m for m in x['model'].unique() if m != 'human']
+        if len(gen_models) == 1:  # keep each run's reference rows separate (each run refits its classifier)
+            x.loc[x['model'] == 'human', 'model'] = 'human:' + gen_models[0]
+        parts.append(x)
+    d = _prep(pd.concat(parts, ignore_index=True))
     ci = ci_table(d, a.B)
     ci.to_csv(os.path.join(a.out, 'ci_bootstrap.csv'), index=False)
     rows = []
     for (cfg, model), g in d.groupby(['config', 'model']):
-        if model == 'human':
+        if str(model).startswith('human'):
             continue
         base = dict(config=cfg, model=model)
         for (ma, la, mb, lb) in [('dynalora', 1.0, 'dynalora', 1.25), ('dynalora', 1.0, 'dynalora', 1.5),
@@ -104,7 +117,16 @@ def main():
                 continue
             for m, v in r.items():
                 rows.append(dict(config=cfg, model=model, a=f'{ma}@{la}', b=f'{mb}@{lb}', metric=m, **v))
-    pd.DataFrame(rows).to_csv(os.path.join(a.out, 'paired_tests.csv'), index=False)
+    pt = pd.DataFrame(rows)
+    # Holm adjustment within each family of tests (one adapter, one metric)
+    pt['p_holm'] = np.nan
+    for _, g in pt.groupby(['config', 'model', 'metric']):
+        order = g['p_boot'].sort_values().index
+        m = len(order); run = 0.0
+        for k, ix in enumerate(order):
+            run = max(run, min(1.0, (m - k) * pt.at[ix, 'p_boot']))
+            pt.at[ix, 'p_holm'] = run
+    pt.to_csv(os.path.join(a.out, 'paired_tests.csv'), index=False)
     print('wrote', a.out)
 
 
