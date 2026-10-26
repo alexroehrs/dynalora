@@ -1,7 +1,8 @@
 """Teacher-forced likelihood of the scaled adapter on domain and general text.
 
 For every trained adapter and every lambda, the script scores held-out text of the
-adapter's domain and generic English text (WikiText-103 test split) under two forms of
+adapter's domain, generic English text (WikiText-103 train split), and optionally negative
+IMDB test reviews (``domain_neg``, the training distribution of the negative-only adapter), under two forms of
 scaling, without sampling:
 
 * ``logit``   log_softmax(y_base + lam * (y_lora - y_base))          (DynaLoRA)
@@ -38,6 +39,9 @@ _HTML = re.compile(r'<[^>]+>')
 
 def log(msg):
     print(time.strftime('%H:%M:%S'), msg, flush=True)
+
+
+PREFIX = {'domain': 'll', 'general': 'llgen', 'domain_neg': 'llneg'}
 
 
 def eval_texts(cfg_name, n_domain, n_general, smoke=False):
@@ -123,7 +127,7 @@ def main():
     ap.add_argument('--max_len', type=int, default=128)
     ap.add_argument('--batch_size', type=int, default=16)
     ap.add_argument('--lambdas', nargs='+', type=float, default=LAMBDAS)
-    ap.add_argument('--sets', nargs='+', default=['domain', 'general'], choices=['domain', 'general'])
+    ap.add_argument('--sets', nargs='+', default=['domain', 'general'], choices=['domain', 'general', 'domain_neg'])
     ap.add_argument('--smoke', action='store_true')
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
@@ -131,7 +135,7 @@ def main():
     for cname in a.configs:
         todo = []
         for st in a.sets:
-            path = os.path.join(a.out, f"{'ll' if st == 'domain' else 'llgen'}__{mtag}__{cname}.csv.gz")
+            path = os.path.join(a.out, f"{PREFIX[st]}__{mtag}__{cname}.csv.gz")
             if os.path.exists(path):
                 log(f'{path} exists, skipping')
             else:
@@ -143,7 +147,10 @@ def main():
         gen = Generator(a.model, adir)
         dom, general = eval_texts(cname, a.n_domain, a.n_general, a.smoke)
         for st, path in todo:
-            texts = dom if st == 'domain' else general
+            if st == 'domain_neg':
+                texts = dom if a.smoke else D.imdb_test_by_label(a.n_domain, 0)
+            else:
+                texts = dom if st == 'domain' else general
             rows = score(gen, texts, st, a.lambdas, a.batch_size, a.max_len)
             log(f'{cname}: {st} scored ({len(texts)} texts)')
             df = pd.DataFrame(rows, columns=['set', 'text_id', 'method', 'lambda', 'nll_sum', 'n_tokens', 'kl_sum'])

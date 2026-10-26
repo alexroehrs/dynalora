@@ -4,6 +4,19 @@ Example (Colab, T4):
     python scripts/run_all.py --out results/level2 --models gpt2 --configs imdb_neg imdb_bal imdb_bal_nohtml yelp pubmed
     python scripts/run_all.py --out results/level2 --models Qwen/Qwen2.5-0.5B --configs imdb_bal --n_samples 10
 
+Training-strength sweep (balanced IMDB at several learning rates, everything else fixed;
+the suffix ``__lr<value>`` overrides the learning rate), DynaLoRA only, with the domain
+classifier fitted on the same domains as the main GPT-2 run:
+    python scripts/run_all.py --out results/level2/sweep --models gpt2 \
+        --configs imdb_bal__lr5e-06 imdb_bal__lr1.5e-05 imdb_bal__lr5e-05 imdb_bal__lr1e-04 \
+        --methods dynalora --clf_configs imdb_bal yelp pubmed
+
+Plain adapter on a finer temperature grid, for the continuous entropy-matched ablation,
+reusing the adapters of the main run:
+    python scripts/run_all.py --out results/level2/temps_gpt2 --adapters_dir results/level2/gpt2/adapters \
+        --models gpt2 --configs imdb_neg imdb_bal imdb_bal_nohtml yelp pubmed --methods lora_temp \
+        --temps 0.65 0.55 0.45 0.35 0.25
+
 Smoke test on CPU with a random tiny model and synthetic data:
     python scripts/run_all.py --smoke --out /tmp/smoke
 """
@@ -87,11 +100,22 @@ def main():
     ap.add_argument('--skip_cfg', action='store_true')
     ap.add_argument('--skip_weight', action='store_true')
     ap.add_argument('--skip_temp', action='store_true')
+    ap.add_argument('--methods', nargs='+', default=['dynalora', 'weight', 'lora_temp', 'base_temp', 'cfg'],
+                    choices=['dynalora', 'weight', 'lora_temp', 'base_temp', 'cfg'])
+    ap.add_argument('--adapters_dir', default=None, help='directory with trained adapters (default: <out>/adapters)')
+    ap.add_argument('--clf_configs', nargs='*', default=[],
+                    help='extra configurations whose held-out texts are added to the domain classifier')
     ap.add_argument('--smoke', action='store_true')
     args = ap.parse_args()
+    if args.skip_weight and 'weight' in args.methods:
+        args.methods.remove('weight')
+    if args.skip_cfg and 'cfg' in args.methods:
+        args.methods.remove('cfg')
+    if args.skip_temp:
+        args.methods = [m for m in args.methods if m not in ('lora_temp', 'base_temp')]
 
     os.makedirs(args.out, exist_ok=True)
-    adapters_dir = os.path.join(args.out, 'adapters'); os.makedirs(adapters_dir, exist_ok=True)
+    adapters_dir = args.adapters_dir or os.path.join(args.out, 'adapters'); os.makedirs(adapters_dir, exist_ok=True)
     if args.smoke:
         tiny = smoke_setup(os.path.join(args.out, 'smoke'))
         args.models = [tiny]; args.ext_lm = tiny; args.no_sentiment = True
@@ -108,7 +132,7 @@ def main():
             configs[cname] = cfg
             adir = os.path.join(adapters_dir, f'{mtag}__{cname}')
             if not os.path.exists(os.path.join(adir, 'adapter_config.json')):
-                hp = dict(DEFAULT_HP); hp.update(TRAIN_HP.get(cname, {}))
+                hp = dict(DEFAULT_HP); hp.update(TRAIN_HP.get(D.base_name(cname), {})); hp.update(D.variant_hp(cname))
                 if args.smoke:
                     hp.update(epochs=1)
                 log(f'training adapter {mtag}/{cname} with {hp}')
@@ -122,13 +146,15 @@ def main():
             gen = Generator(model, adir)
             rows = []
             common = dict(n_samples=args.n_samples, max_new_tokens=args.max_new_tokens, log=log)
-            rows += run_grid(gen, cfg['prompts'], 'dynalora', args.lambdas, temperature=0.7, **common)
-            if not args.skip_weight:
+            if 'dynalora' in args.methods:
+                rows += run_grid(gen, cfg['prompts'], 'dynalora', args.lambdas, temperature=0.7, **common)
+            if 'weight' in args.methods:
                 rows += run_grid(gen, cfg['prompts'], 'weight', args.lambdas, temperature=0.7, **common)
-            if not args.skip_temp:
+            if 'lora_temp' in args.methods:
                 rows += run_grid(gen, cfg['prompts'], 'lora', args.temps, **common)
+            if 'base_temp' in args.methods:
                 rows += run_grid(gen, cfg['prompts'], 'base', args.temps, **common)
-            if not args.skip_cfg:
+            if 'cfg' in args.methods:
                 rows += run_grid(gen, cfg['prompts'], 'cfg', args.gammas, temperature=0.7, cfg_prefix=cfg['cfg_prefix'], **common)
             df = pd.DataFrame(rows); df['config'] = cname; df['model'] = mtag; df['domain'] = cfg['domain']
             df.to_csv(raw_path, index=False); all_rows.append(df)
@@ -161,7 +187,10 @@ def main():
         del lm
 
     log('domain classifier')
-    by_dom = {cfg['domain']: cfg['heldout'][:2000] for cfg in configs.values()}
+    by_dom = {}
+    for c in list(args.clf_configs) + [c for c in configs if c not in args.clf_configs]:
+        cc = configs[c] if c in configs else D.load_config(c)
+        by_dom.setdefault(cc['domain'], cc['heldout'][:2000])
     by_dom['generic'] = _synth('imdb', 60) if args.smoke else D.generic_texts(2000)
     clf = E.DomainClassifier(by_dom)
     acc = clf.cv_accuracy(by_dom)
