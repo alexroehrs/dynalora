@@ -31,8 +31,20 @@ CFG_PREFIX = {
     'pubmed': "The following is the abstract of a biomedical research article.\n",
 }
 
-DOMAIN_OF = {'imdb_neg': 'imdb', 'imdb_bal': 'imdb', 'imdb_bal_nohtml': 'imdb',
-             'yelp': 'yelp', 'pubmed': 'pubmed'}
+_DOMAIN_OF = {'imdb_neg': 'imdb', 'imdb_bal': 'imdb', 'imdb_bal_nohtml': 'imdb',
+              'yelp': 'yelp', 'pubmed': 'pubmed'}
+
+
+class _DomainOf(dict):
+    """Domain of a configuration, accepting training-variant names such as ``imdb_bal__lr1e-05``."""
+    def __getitem__(self, k):
+        return dict.__getitem__(self, k.split('__')[0])
+
+    def __contains__(self, k):
+        return dict.__contains__(self, k.split('__')[0])
+
+
+DOMAIN_OF = _DomainOf(_DOMAIN_OF)
 
 
 def _imdb_texts(split, n, balanced, seed):
@@ -71,7 +83,34 @@ def generic_texts(n=2000):
     return out[:n]
 
 
+def imdb_test_by_label(n, label, seed=42):
+    """Reviews of one polarity from the IMDB test split (0 negative, 1 positive)."""
+    from datasets import load_dataset
+    ds = load_dataset('stanfordnlp/imdb', split='test')
+    idx = [i for i in range(len(ds)) if ds[i]['label'] == label]
+    random.Random(seed + 7).shuffle(idx)
+    return [ds[i]['text'] for i in idx[:n]]
+
+
+def base_name(name):
+    """Configuration name without a training-variant suffix (``imdb_bal__lr1e-05`` -> ``imdb_bal``)."""
+    return name.split('__')[0]
+
+
+def variant_hp(name):
+    """Training overrides encoded in a variant name, e.g. ``imdb_bal__lr1e-05`` -> {'lr': 1e-05}."""
+    hp = {}
+    for part in name.split('__')[1:]:
+        if part.startswith('lr'):
+            hp['lr'] = float(part[2:])
+    return hp
+
+
 def load_config(name, n_train=10000, n_heldout=2000, seed=42):
+    if '__' in name:
+        cfg = load_config(base_name(name), n_train, n_heldout, seed)
+        cfg['name'] = name
+        return cfg
     if name == 'imdb_neg':
         # Original setting: first 10,000 rows of the IMDB train split, which are all negative.
         train = _imdb_texts('train', n_train, balanced=False, seed=seed)
