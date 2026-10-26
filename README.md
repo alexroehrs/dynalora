@@ -1,4 +1,4 @@
-# Characterizing Logit-Space Scaling of LoRA Adapters at Inference Time
+# Controlling LoRA Adapter Strength at Inference Time through Logit-Space Scaling, Weight-Space Scaling, and Temperature
 
 Code, generated texts, and per-generation scores for the paper. DynaLoRA scales the contribution of a LoRA adapter at decoding time as
 
@@ -13,10 +13,13 @@ dynalora/                 package: corpus configurations, LoRA training, generat
 scripts/run_all.py        end-to-end run: train adapters, generate, score, summarize
 scripts/llm_judge.py      LLM-judge ratings (fluency, genre fit) on a stratified sample
 scripts/bootstrap_ci.py   prompt-clustered bootstrap intervals and paired tests
+scripts/likelihood_tradeoff.py  teacher-forced likelihood and KL divergence on domain and general text, per lambda
+scripts/likelihood_summary.py   token-weighted perplexity with bootstrap intervals over texts
 notebooks/colab_run_all.ipynb   driver used on a Colab T4 GPU
 results/level2/gpt2/      GPT-2 small: summary tables, entropy-matched ablation, per-generation scores
 results/level2/qwen/      Qwen2.5-0.5B (balanced IMDB): same files
 results/level2/stats/     bootstrap intervals, paired tests, LLM-judge ratings
+results/level2/likelihood/ per-text likelihoods (ll__: domain text, llgen__: general text) and ll_summary.csv
 ```
 
 ## Corpus configurations
@@ -32,7 +35,7 @@ results/level2/stats/     bootstrap intervals, paired tests, LLM-judge ratings
 
 ## Metrics
 
-HTML artifact rate, generated length and EOS collapse, domain vocabulary score, perplexity of the continuation under GPT-2 large, probability of the target domain under a TF-IDF and logistic-regression classifier trained on held-out texts, positive probability under an SST-2 sentiment classifier, dist-1/2/3, mean sampling entropy, and, on a stratified sample, fluency and genre-fit ratings from two open LLM judges (Qwen2.5-7B-Instruct and OLMo-2-7B-Instruct).
+HTML artifact rate, generated length and EOS collapse, domain vocabulary score, perplexity of the continuation under GPT-2 large, probability of the target domain under a TF-IDF and logistic-regression classifier trained on held-out texts, positive probability under an SST-2 sentiment classifier, dist-1/2/3, mean sampling entropy, and, on a stratified sample, fluency and genre-fit ratings from two open LLM judges (Qwen2.5-7B-Instruct and OLMo-2-7B-Instruct). Without sampling, the likelihood scripts score 500 held-out domain texts and 500 WikiText-103 paragraphs under logit-space and weight-space scaling at every lambda, with the per-token KL divergence from the base model.
 
 ## Running
 
@@ -42,6 +45,9 @@ python scripts/run_all.py --out results/level2/gpt2 --models gpt2 --configs imdb
 python scripts/run_all.py --out results/level2/qwen --models Qwen/Qwen2.5-0.5B --configs imdb_bal
 python scripts/bootstrap_ci.py --inputs 'results/level2/*/metrics__*.csv.gz' --out results/level2/stats
 python scripts/llm_judge.py --inputs <gpt2>/generations_all_metrics.csv <qwen>/generations_all_metrics.csv --out results/level2/judge
+python scripts/likelihood_tradeoff.py --model gpt2 --adapters_dir <gpt2>/adapters --configs imdb_neg imdb_bal imdb_bal_nohtml yelp pubmed --out results/level2/likelihood
+python scripts/likelihood_tradeoff.py --model Qwen/Qwen2.5-0.5B --adapters_dir <qwen>/adapters --configs imdb_bal --batch_size 8 --out results/level2/likelihood
+python scripts/likelihood_summary.py results/level2/likelihood
 python scripts/run_all.py --smoke --out /tmp/smoke     # CPU smoke test with a random tiny model
 ```
 
