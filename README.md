@@ -6,29 +6,31 @@ Code, generated texts, and per-generation scores for the paper. DynaLoRA scales 
 y = y_base + lambda * (y_lora - y_base)
 ```
 
-where `y_base` and `y_lora` are the next-token logits of the same model with the adapter disabled and enabled. The study sweeps lambda from 0 to 3 on six adapters (five on GPT-2 small, one on Qwen2.5-0.5B) and on a learning-rate sweep, and compares DynaLoRA with weight-space scaling of the LoRA update, classifier-free guidance with a domain prefix, and the plain adapter sampled at matched entropy, on generation metrics, LLM-judge ratings, teacher-forced likelihood, and zero-shot benchmarks.
+where `y_base` and `y_lora` are the next-token logits of the same model with the adapter disabled and enabled. The study sweeps lambda from 0 to 3 on six adapters (five on GPT-2 small, one on Qwen2.5-0.5B), on a learning-rate sweep, and on a replication with two further training seeds and on Qwen2.5-1.5B, and compares DynaLoRA with weight-space scaling of the LoRA update, classifier-free guidance with a domain prefix, and the plain adapter sampled at matched entropy, on generation metrics, LLM-judge ratings, teacher-forced likelihood, and zero-shot benchmarks.
 
 ## Layout
 
 | Path | Content |
 |---|---|
 | `dynalora/` | package: corpus configurations, LoRA training, generation procedures, metrics, aggregation |
-| `scripts/run_all.py` | end-to-end run: train adapters, generate, score, summarize (`--methods`, `--adapters_dir`, `--clf_configs`; configuration suffix `__lr<value>` overrides the learning rate) |
+| `scripts/run_all.py` | end-to-end run: train adapters, generate, score, summarize (`--methods`, `--adapters_dir`, `--clf_configs`; configuration suffixes `__lr<value>` and `__seed<n>` override the learning rate and the training seed) |
 | `scripts/likelihood_tradeoff.py`, `scripts/likelihood_summary.py` | teacher-forced likelihood and KL divergence per lambda on domain text, general text, and negative IMDB reviews |
 | `scripts/rescore.py` | re-scoring with SmolLM2-1.7B and a unified domain classifier |
 | `scripts/zeroshot_bench.py` | zero-shot LAMBADA, HellaSwag, PIQA, ARC-Easy for both forms of scaling (requests from `lm-evaluation-harness`) |
 | `scripts/bootstrap_ci.py` | prompt-clustered bootstrap intervals and Holm-adjusted paired tests |
 | `scripts/llm_judge.py` | LLM-judge ratings (fluency, genre fit) on a stratified sample |
 | `scripts/analysis/` | analyses and figures of the paper (see its README) |
-| `notebooks/colab_run_all.ipynb`, `notebooks/colab_revision.ipynb` | drivers used on a Colab T4 GPU |
+| `notebooks/colab_run_all.ipynb`, `notebooks/colab_revision.ipynb`, `notebooks/colab_replication.ipynb` | drivers used on a Colab T4 GPU |
 | `results/level2/gpt2/`, `results/level2/qwen/` | main runs: summary tables, per-generation scores |
 | `results/level2/sweep/` | learning-rate sweep on balanced IMDB (DynaLoRA only) |
+| `results/level2/seeds/` | balanced IMDB and PubMed adapters of GPT-2 retrained with seeds 43 and 44 (DynaLoRA and weight-space scaling) |
+| `results/level2/qwen15/` | balanced IMDB and PubMed adapters on Qwen2.5-1.5B (DynaLoRA and weight-space scaling) |
 | `results/level2/temps_gpt2/`, `results/level2/temps_qwen/` | plain adapter on a 0.05-step temperature grid |
 | `results/level2/rescore/` | per-generation scores with SmolLM2-1.7B perplexity (`ext2_*`) and unified domain probability (`domain_prob_u`) |
 | `results/level2/likelihood/` | per-text likelihoods (`ll__` domain, `llgen__` general, `llneg__` negative IMDB reviews) and `ll_summary.csv` |
 | `results/level2/bench/` | per-document benchmark scores for every method and lambda |
 | `results/level2/stats/` | bootstrap intervals, paired tests, LLM-judge ratings |
-| `results/level2/analysis/` | derived tables (equal divergence, entropy matching, formatting rates, paired tests on SmolLM2 perplexity) |
+| `results/level2/analysis/` | derived tables (equal divergence, entropy matching, formatting rates, paired tests on SmolLM2 perplexity, replication) |
 
 ## Data
 
@@ -47,6 +49,10 @@ python scripts/likelihood_summary.py results/level2/likelihood
 python scripts/rescore.py --inputs "results/level2/*/generations_all_metrics.csv" --out results/level2/rescore
 python scripts/zeroshot_bench.py --model gpt2 --adapters_dir results/level2/gpt2/adapters --configs imdb_neg imdb_bal imdb_bal_nohtml yelp pubmed --out results/level2/bench
 python scripts/bootstrap_ci.py --inputs "results/level2/gpt2/metrics__*.csv.gz" "results/level2/qwen/metrics__*.csv.gz" --out results/level2/stats
+python scripts/run_all.py --out results/level2/seeds --models gpt2 --configs imdb_bal__seed43 imdb_bal__seed44 pubmed__seed43 pubmed__seed44 --methods dynalora weight --clf_configs imdb_bal yelp pubmed
+python scripts/run_all.py --out results/level2/qwen15 --models Qwen/Qwen2.5-1.5B --configs imdb_bal pubmed --methods dynalora weight --clf_configs imdb_bal yelp pubmed
+python scripts/zeroshot_bench.py --model Qwen/Qwen2.5-1.5B --adapters_dir results/level2/qwen15/adapters --configs imdb_bal pubmed --out results/level2/bench --batch_size 8 --limit 500 --lambdas 0 0.5 1 1.5 2 2.5 3
+python scripts/analysis/replication.py
 python scripts/run_all.py --smoke --out /tmp/smoke   # CPU smoke test with a random tiny model
 ```
 
