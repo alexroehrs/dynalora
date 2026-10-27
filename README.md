@@ -21,6 +21,7 @@ where `y_base` and `y_lora` are the next-token logits of the same model with the
 | `scripts/llm_judge.py` | LLM-judge ratings (fluency, genre fit) on a stratified sample |
 | `scripts/analysis/` | analyses and figures of the paper (see its README) |
 | `notebooks/colab_run_all.ipynb`, `notebooks/colab_revision.ipynb`, `notebooks/colab_replication.ipynb` | drivers used on a Colab T4 GPU |
+| `notebooks/colab_qwen7b.ipynb` | Qwen2.5-7B with a 4-bit NF4 base model (QLoRA, `--load_in_4bit`): training, likelihood, benchmarks, reduced generation grid, re-scoring and MAUVE |
 | `results/level2/gpt2/`, `results/level2/qwen/` | main runs: summary tables, per-generation scores |
 | `results/level2/sweep/` | learning-rate sweep on balanced IMDB (DynaLoRA only) |
 | `results/level2/seeds/` | balanced IMDB and PubMed adapters of GPT-2 retrained with seeds 43 and 44 (DynaLoRA and weight-space scaling) |

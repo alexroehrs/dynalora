@@ -139,6 +139,7 @@ def main():
     ap.add_argument('--tasks', nargs='+', default=TASKS)
     ap.add_argument('--limit', type=int, default=1000)
     ap.add_argument('--lambdas', nargs='+', type=float, default=LAMBDAS)
+    ap.add_argument('--load_in_4bit', action='store_true', help='4-bit NF4 base model (adapters trained with QLoRA)')
     ap.add_argument('--batch_size', type=int, default=32)
     ap.add_argument('--max_len', type=int, default=512)
     a = ap.parse_args()
@@ -156,7 +157,7 @@ def main():
         path = os.path.join(a.out, f'bench__{mtag}__{cname}.csv.gz')
         if os.path.exists(path):
             log(f'{path} exists, skipping'); continue
-        gen = Generator(a.model, os.path.join(a.adapters_dir, f'{mtag}__{cname}'))
+        gen = Generator(a.model, os.path.join(a.adapters_dir, f'{mtag}__{cname}'), load_in_4bit=a.load_in_4bit)
         gen.reset_weight_scale()
         results = {}
         r = score(gen, uniq, 'logit', a.lambdas, a.batch_size, a.max_len)

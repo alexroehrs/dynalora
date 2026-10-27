@@ -13,6 +13,11 @@ no top-k or nucleus truncation, no repetition penalty):
 Every generated sequence records the mean entropy (nats) of the sampling
 distribution over its decoding steps, which is what the entropy-matched
 temperature ablation uses.
+
+With ``load_in_4bit`` the base model is loaded in 4-bit NF4 (bitsandbytes), as the
+adapter was trained with ``train_adapter(..., load_in_4bit=True)``; the LoRA layers of
+the quantized model keep their ``scaling`` dict, so weight-space scaling and
+``disable_adapter()`` work unchanged.
 """
 import math
 import time
@@ -22,20 +27,28 @@ import torch.nn.functional as F
 
 
 class Generator:
-    def __init__(self, model_name, adapter_dir=None, device=None, dtype=None):
-        from transformers import AutoModelForCausalLM, AutoTokenizer
+    def __init__(self, model_name, adapter_dir=None, device=None, dtype=None, load_in_4bit=False):
+        from transformers import AutoTokenizer
+        from .train import _load_lm, compute_dtype_4bit
         self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
-        self.dtype = dtype or (torch.float16 if self.device == 'cuda' else torch.float32)
+        if load_in_4bit:
+            self.dtype = dtype or (compute_dtype_4bit() if self.device == 'cuda' else torch.float32)
+        else:
+            self.dtype = dtype or (torch.float16 if self.device == 'cuda' else torch.float32)
         self.tok = AutoTokenizer.from_pretrained(adapter_dir or model_name)
         if self.tok.pad_token is None:
             self.tok.pad_token = self.tok.eos_token
-        from .train import _load_lm
-        base = _load_lm(model_name, self.dtype).to(self.device)
+        if load_in_4bit:   # placed on the device by device_map; .to() is not allowed
+            base = _load_lm(model_name, self.dtype, load_in_4bit=True)
+        else:
+            base = _load_lm(model_name, self.dtype).to(self.device)
         base.eval()
         self.has_adapter = adapter_dir is not None
         if self.has_adapter:
             from peft import PeftModel
-            self.model = PeftModel.from_pretrained(base, adapter_dir).to(self.device)
+            self.model = PeftModel.from_pretrained(base, adapter_dir)
+            if not load_in_4bit:
+                self.model = self.model.to(self.device)
             self.model.eval()
             self._lora_layers = [m for m in self.model.modules() if hasattr(m, 'scaling') and isinstance(m.scaling, dict)]
             self._base_scaling = [dict(m.scaling) for m in self._lora_layers]

@@ -25,6 +25,12 @@ reusing the adapters of the main run:
         --models gpt2 --configs imdb_neg imdb_bal imdb_bal_nohtml yelp pubmed --methods lora_temp \
         --temps 0.65 0.55 0.45 0.35 0.25
 
+Larger base model in 4-bit NF4 (QLoRA): train first, then generate on a reduced grid:
+    python scripts/run_all.py --out results/level2/qwen7b --models Qwen/Qwen2.5-7B --configs imdb_bal pubmed \
+        --load_in_4bit --train_only
+    python scripts/run_all.py --out results/level2/qwen7b --models Qwen/Qwen2.5-7B --configs imdb_bal pubmed \
+        --load_in_4bit --methods dynalora weight --lambdas 0 0.5 1 1.5 2 3 --clf_configs imdb_bal yelp pubmed
+
 Smoke test on CPU with a random tiny model and synthetic data:
     python scripts/run_all.py --smoke --out /tmp/smoke
 """
@@ -113,6 +119,9 @@ def main():
     ap.add_argument('--adapters_dir', default=None, help='directory with trained adapters (default: <out>/adapters)')
     ap.add_argument('--clf_configs', nargs='*', default=[],
                     help='extra configurations whose held-out texts are added to the domain classifier')
+    ap.add_argument('--load_in_4bit', action='store_true',
+                    help='load the base model in 4-bit NF4 (QLoRA) for training and generation')
+    ap.add_argument('--train_only', action='store_true', help='train the missing adapters and stop')
     ap.add_argument('--smoke', action='store_true')
     args = ap.parse_args()
     if args.skip_weight and 'weight' in args.methods:
@@ -144,14 +153,16 @@ def main():
                 if args.smoke:
                     hp.update(epochs=1)
                 log(f'training adapter {mtag}/{cname} with {hp}')
-                train_adapter(model, cfg['train'], adir, log=log, **hp)
+                train_adapter(model, cfg['train'], adir, load_in_4bit=args.load_in_4bit, log=log, **hp)
             else:
                 log(f'adapter {adir} exists, skipping training')
+            if args.train_only:
+                continue
             raw_path = os.path.join(args.out, f'generations__{mtag}__{cname}.csv')
             if os.path.exists(raw_path):
                 log(f'{raw_path} exists, skipping generation')
                 all_rows.append(pd.read_csv(raw_path)); continue
-            gen = Generator(model, adir)
+            gen = Generator(model, adir, load_in_4bit=args.load_in_4bit)
             rows = []
             common = dict(n_samples=args.n_samples, max_new_tokens=args.max_new_tokens, log=log)
             if 'dynalora' in args.methods:
@@ -170,6 +181,9 @@ def main():
             if not args.smoke:
                 import torch; torch.cuda.empty_cache()
 
+    if args.train_only:
+        log('done (train only)')
+        return
     df = pd.concat(all_rows, ignore_index=True)
 
     # ---- human references ----------------------------------------------------

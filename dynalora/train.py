@@ -4,7 +4,9 @@
 max length 128, AdamW, cosine schedule with 5% warmup, 90/10 split) with two
 switches: the learning rate (the original run used 5e-6; the extended study
 uses the standard 2e-4) and whether padded positions are masked in the loss
-(the original run did not mask them).
+(the original run did not mask them). With ``load_in_4bit`` the frozen base model
+is quantized to 4-bit NF4 with bitsandbytes (QLoRA) and trained with gradient
+checkpointing; the adapter itself stays in float32.
 """
 import math
 import os
@@ -13,12 +15,27 @@ import random
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-def _load_lm(name, dt):
+def compute_dtype_4bit():
+    """Compute dtype of the 4-bit layers: bfloat16 where the GPU supports it, else float16."""
+    if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
+        return torch.bfloat16
+    return torch.float16
+
+
+def _load_lm(name, dt, load_in_4bit=False):
+    """Loads a causal LM in ``dt``; with ``load_in_4bit`` the linear layers are quantized
+    to NF4 (double quantization, compute in ``dt``) and the model is placed on the device."""
     from transformers import AutoModelForCausalLM
+    kw = {}
+    if load_in_4bit:
+        from transformers import BitsAndBytesConfig
+        kw['quantization_config'] = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type='nf4',
+                                                       bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=dt)
+        kw['device_map'] = {'': 0 if torch.cuda.is_available() else 'cpu'}
     try:
-        return AutoModelForCausalLM.from_pretrained(name, dtype=dt)
+        return AutoModelForCausalLM.from_pretrained(name, dtype=dt, **kw)
     except TypeError:
-        return AutoModelForCausalLM.from_pretrained(name, torch_dtype=dt)
+        return AutoModelForCausalLM.from_pretrained(name, torch_dtype=dt, **kw)
 
 
 TARGETS = {
@@ -54,7 +71,7 @@ class _DS(Dataset):
 
 def train_adapter(model_name, texts, out_dir, lr=2e-4, epochs=3, max_len=128, batch_size=8,
                   grad_accum=2, mask_pad=True, r=8, alpha=16, dropout=0.1, seed=42,
-                  val_frac=0.1, eval_every=100, device=None, dtype=None, log=print):
+                  val_frac=0.1, eval_every=100, device=None, dtype=None, load_in_4bit=False, log=print):
     from transformers import AutoModelForCausalLM, AutoTokenizer, get_cosine_schedule_with_warmup
     from peft import LoraConfig, get_peft_model
 
@@ -65,7 +82,15 @@ def train_adapter(model_name, texts, out_dir, lr=2e-4, epochs=3, max_len=128, ba
     tok = AutoTokenizer.from_pretrained(model_name)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
-    model = _load_lm(model_name, torch.float32).to(device)
+    if load_in_4bit:
+        amp_dtype = compute_dtype_4bit() if device == 'cuda' else torch.float32
+        model = _load_lm(model_name, amp_dtype, load_in_4bit=True)
+        model.config.use_cache = False
+        model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={'use_reentrant': False})
+        model.enable_input_require_grads()
+    else:
+        amp_dtype = torch.float16
+        model = _load_lm(model_name, torch.float32).to(device)
     cfg = LoraConfig(r=r, lora_alpha=alpha, lora_dropout=dropout, bias='none',
                      target_modules=lora_targets(model_name), task_type='CAUSAL_LM')
     model = get_peft_model(model, cfg)
@@ -83,14 +108,14 @@ def train_adapter(model_name, texts, out_dir, lr=2e-4, epochs=3, max_len=128, ba
     opt = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=lr)
     steps = math.ceil(len(tr) / grad_accum) * epochs
     sch = get_cosine_schedule_with_warmup(opt, int(0.05 * steps), steps)
-    scaler = torch.amp.GradScaler('cuda', enabled=(device == 'cuda'))
+    scaler = torch.amp.GradScaler('cuda', enabled=(device == 'cuda' and amp_dtype == torch.float16))
 
     def evaluate():
         model.eval(); tot = 0.0; n = 0
         with torch.no_grad():
             for b in va:
                 b = {k: v.to(device) for k, v in b.items()}
-                with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=(device == 'cuda')):
+                with torch.autocast(device_type='cuda', dtype=amp_dtype, enabled=(device == 'cuda')):
                     out = model(**b)
                 tot += out.loss.item(); n += 1
         model.train()
@@ -101,7 +126,7 @@ def train_adapter(model_name, texts, out_dir, lr=2e-4, epochs=3, max_len=128, ba
     for ep in range(epochs):
         for i, b in enumerate(tr):
             b = {k: v.to(device) for k, v in b.items()}
-            with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=(device == 'cuda')):
+            with torch.autocast(device_type='cuda', dtype=amp_dtype, enabled=(device == 'cuda')):
                 loss = model(**b).loss / grad_accum
             scaler.scale(loss).backward()
             if (i + 1) % grad_accum == 0 or (i + 1) == len(tr):
@@ -120,7 +145,7 @@ def train_adapter(model_name, texts, out_dir, lr=2e-4, epochs=3, max_len=128, ba
     tok.save_pretrained(out_dir)
     with open(os.path.join(out_dir, 'train_log.txt'), 'w') as f:
         f.write(f'model={model_name} lr={lr} epochs={epochs} mask_pad={mask_pad} r={r} alpha={alpha} seed={seed} '
-                f'n_train={len(tr_t)} n_val={len(val_t)} best_val_loss={best:.4f} best_ppl={math.exp(best):.2f}\n')
+                f'{"load_in_4bit=True " if load_in_4bit else ""}n_train={len(tr_t)} n_val={len(val_t)} best_val_loss={best:.4f} best_ppl={math.exp(best):.2f}\n')
         for s, v in history:
             f.write(f'{s}\t{v:.4f}\n')
     return out_dir, best

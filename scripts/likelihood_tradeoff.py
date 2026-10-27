@@ -127,6 +127,7 @@ def main():
     ap.add_argument('--max_len', type=int, default=128)
     ap.add_argument('--batch_size', type=int, default=16)
     ap.add_argument('--lambdas', nargs='+', type=float, default=LAMBDAS)
+    ap.add_argument('--load_in_4bit', action='store_true', help='4-bit NF4 base model (adapters trained with QLoRA)')
     ap.add_argument('--sets', nargs='+', default=['domain', 'general'], choices=['domain', 'general', 'domain_neg'])
     ap.add_argument('--smoke', action='store_true')
     a = ap.parse_args()
@@ -144,7 +145,7 @@ def main():
             continue
         adir = os.path.join(a.adapters_dir, f'{mtag}__{cname}')
         log(f'loading {a.model} + {adir}')
-        gen = Generator(a.model, adir)
+        gen = Generator(a.model, adir, load_in_4bit=a.load_in_4bit)
         dom, general = eval_texts(cname, a.n_domain, a.n_general, a.smoke)
         for st, path in todo:
             if st == 'domain_neg':
