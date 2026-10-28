@@ -20,7 +20,7 @@ for j,(m,c,t) in enumerate(order):
         lo,hi=np.percentile(bs,[2.5,97.5],axis=0)
         kl=l[(l.model==m)&(l.config==c)&(l.method==meth)].sort_values('lam').kl.values
         ax.fill_between(kl,lo,hi,color=col,alpha=0.18,lw=0); ax.plot(kl,acc.values,ls=ls,color=col,lw=1.1,marker=mk,ms=2.2,label=lab)
-        ax.annotate('$\\lambda$=3',(kl[-1],acc.values[-1]),textcoords='offset points',xytext=(-14,4) if meth=='logit' else (2,-8),fontsize=5.3,color='#333')
+        ax.annotate('$\\lambda$=3',(kl[-1],acc.values[-1]),textcoords='offset points',xytext=(-8,7) if meth=='logit' else (-20,-11),fontsize=5.3,color='#333')
     ax.set_title(t,fontsize=6.8,pad=2); ax.grid(alpha=0.25,lw=0.4); ax.tick_params(labelsize=6,length=2)
     if j%3==0: ax.set_ylabel('Mean zero-shot accuracy (%)',fontsize=6.3)
     if j//3==1: ax.set_xlabel('KL to base (nats/token)',fontsize=6)

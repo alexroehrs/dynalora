@@ -1,4 +1,4 @@
-# Inference-Time Strength Control of LoRA Adapters: Controlled Comparison of Logit-Space and Weight-Space Scaling
+# Inference-Time Strength Control of LoRA Adapters: Comparison of Logit-Space Scaling, Weight-Space Scaling, Temperature, and Prompt Guidance
 
 Code, generated texts, and per-generation scores for the paper. DynaLoRA scales the contribution of a LoRA adapter at decoding time as
 

@@ -19,7 +19,7 @@ for j,(m,c,t) in enumerate(order):
         g=s[(s.model==m)&(s.config==c)&(s.set=='general')&(s.method==meth)].sort_values('lam').set_index('lam').ppl
         x=g/g[0.0]; y=d/d[0.0]
         ax.plot(x,y,ls=ls,color=col,lw=1.1,marker=mk,ms=2.2,label=lab)
-        for l in [0.5,1.0,2.0,3.0]:
+        for l in [2.0,3.0]:
             if meth=='logit' or l==3.0:
                 ax.annotate(f'{l:g}',(x[l],y[l]),textcoords='offset points',xytext=(3,3) if meth=='logit' else (3,-8),fontsize=6,color=col)
         for l in d.index: rows.append(dict(model=m,config=c,method=meth,lam=l,general_ratio=x[l],domain_ratio=y[l]))
