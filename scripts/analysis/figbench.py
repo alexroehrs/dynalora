@@ -4,8 +4,8 @@ plt.rcParams.update({'font.size':7,'axes.linewidth':0.6,'axes.edgecolor':'#555',
 R='results/level2/'
 B=pd.concat([pd.read_csv(f) for f in glob.glob(R+'bench/*.gz')]); B['score']=np.where(B.task=='hellaswag',B.acc_norm,B.acc)
 l=pd.read_csv(R+'likelihood/ll_summary.csv'); l=l[l.set=='general']
-order=[('gpt2','imdb_neg','GPT-2, negative IMDB'),('gpt2','imdb_bal','GPT-2, balanced IMDB'),('gpt2','imdb_bal_nohtml','GPT-2, IMDB without HTML'),
-       ('gpt2','yelp','GPT-2, Yelp'),('gpt2','pubmed','GPT-2, PubMed'),('Qwen2.5-0.5B','imdb_bal','Qwen2.5-0.5B, balanced IMDB')]
+order=[('gpt2','imdb_neg','GPT-2, IMDB negative-only'),('gpt2','imdb_bal','GPT-2, IMDB balanced'),('gpt2','imdb_bal_nohtml','GPT-2, IMDB HTML-free'),
+       ('gpt2','yelp','GPT-2, Yelp'),('gpt2','pubmed','GPT-2, PubMed'),('Qwen2.5-0.5B','imdb_bal','Qwen2.5-0.5B, IMDB balanced')]
 C={'logit':('#2a78d6','-','o','Logit space'),'weight':('#eb6834','--','s','Weight space')}
 rng=np.random.default_rng(0)
 fig,axes=plt.subplots(2,3,figsize=(5.15,3.5))
