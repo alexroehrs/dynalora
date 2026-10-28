@@ -6,7 +6,7 @@ Code, generated texts, and per-generation scores for the paper. DynaLoRA scales 
 y = y_base + lambda * (y_lora - y_base)
 ```
 
-where `y_base` and `y_lora` are the next-token logits of the same model with the adapter disabled and enabled. The study sweeps lambda from 0 to 3 on six adapters (five on GPT-2 small, one on Qwen2.5-0.5B), on a learning-rate sweep, and on a replication with two further training seeds and on Qwen2.5-1.5B, and compares DynaLoRA with weight-space scaling of the LoRA update, classifier-free guidance with a domain prefix, and the plain adapter sampled at matched entropy, on generation metrics, LLM-judge ratings, teacher-forced likelihood, and zero-shot benchmarks.
+where `y_base` and `y_lora` are the next-token logits of the same model with the adapter disabled and enabled. The study sweeps lambda from 0 to 3 on six adapters (five on GPT-2 small, one on Qwen2.5-0.5B), on a learning-rate sweep, and on a replication with two further training seeds and on Qwen2.5-1.5B and Qwen2.5-7B (4-bit), and compares DynaLoRA with weight-space scaling of the LoRA update, classifier-free guidance with a domain prefix, and the plain adapter sampled at matched entropy, on generation metrics, LLM-judge ratings, teacher-forced likelihood, and zero-shot benchmarks.
 
 ## Layout
 
@@ -26,6 +26,7 @@ where `y_base` and `y_lora` are the next-token logits of the same model with the
 | `results/level2/sweep/` | learning-rate sweep on balanced IMDB (DynaLoRA only) |
 | `results/level2/seeds/` | balanced IMDB and PubMed adapters of GPT-2 retrained with seeds 43 and 44 (DynaLoRA and weight-space scaling) |
 | `results/level2/qwen15/` | balanced IMDB and PubMed adapters on Qwen2.5-1.5B (DynaLoRA and weight-space scaling) |
+| `results/level2/qwen7b/` | balanced IMDB and PubMed adapters on Qwen2.5-7B with 4-bit weights (DynaLoRA and weight-space scaling, lambda in {0, 0.5, 1, 1.5, 2, 3}) |
 | `results/level2/temps_gpt2/`, `results/level2/temps_qwen/` | plain adapter on a 0.05-step temperature grid |
 | `results/level2/rescore/` | per-generation scores with SmolLM2-1.7B perplexity (`ext2_*`) and unified domain probability (`domain_prob_u`) |
 | `results/level2/likelihood/` | per-text likelihoods (`ll__` domain, `llgen__` general, `llneg__` negative IMDB reviews) and `ll_summary.csv` |
@@ -53,8 +54,13 @@ python scripts/bootstrap_ci.py --inputs "results/level2/gpt2/metrics__*.csv.gz" 
 python scripts/run_all.py --out results/level2/seeds --models gpt2 --configs imdb_bal__seed43 imdb_bal__seed44 pubmed__seed43 pubmed__seed44 --methods dynalora weight --clf_configs imdb_bal yelp pubmed
 python scripts/run_all.py --out results/level2/qwen15 --models Qwen/Qwen2.5-1.5B --configs imdb_bal pubmed --methods dynalora weight --clf_configs imdb_bal yelp pubmed
 python scripts/zeroshot_bench.py --model Qwen/Qwen2.5-1.5B --adapters_dir results/level2/qwen15/adapters --configs imdb_bal pubmed --out results/level2/bench --batch_size 8 --limit 500 --lambdas 0 0.5 1 1.5 2 2.5 3
+# Qwen2.5-7B with 4-bit weights (NVIDIA L4; see notebooks/colab_qwen7b.ipynb)
+python scripts/run_all.py --out results/level2/qwen7b --models Qwen/Qwen2.5-7B --configs imdb_bal pubmed --load_in_4bit --train_only
+python scripts/likelihood_tradeoff.py --model Qwen/Qwen2.5-7B --adapters_dir results/level2/qwen7b/adapters --configs imdb_bal pubmed --load_in_4bit --batch_size 4 --out results/level2/likelihood
+python scripts/zeroshot_bench.py --model Qwen/Qwen2.5-7B --adapters_dir results/level2/qwen7b/adapters --configs imdb_bal pubmed --load_in_4bit --batch_size 4 --limit 500 --lambdas 0 0.5 1 1.5 2 2.5 3 --out results/level2/bench
+python scripts/run_all.py --out results/level2/qwen7b --models Qwen/Qwen2.5-7B --configs imdb_bal pubmed --load_in_4bit --methods dynalora weight --lambdas 0 0.5 1 1.5 2 3 --clf_configs imdb_bal yelp pubmed --n_samples 20
 python scripts/analysis/replication.py
 python scripts/run_all.py --smoke --out /tmp/smoke   # CPU smoke test with a random tiny model
 ```
 
-All runs reported in the paper used a single NVIDIA T4 GPU (Python 3.13, PyTorch 2.11, transformers 5.20, peft 0.21, datasets 4.8, scikit-learn 1.6, lm-eval 0.4); `run_info.json` in each results folder records the arguments and the domain-classifier accuracy.
+All runs reported in the paper used a single NVIDIA T4 GPU, except Qwen2.5-7B (NVIDIA L4, 4-bit NF4 base weights with bitsandbytes) (Python 3.13, PyTorch 2.11, transformers 5.20, peft 0.21, datasets 4.8, scikit-learn 1.6, lm-eval 0.4); `run_info.json` in each results folder records the arguments and the domain-classifier accuracy.

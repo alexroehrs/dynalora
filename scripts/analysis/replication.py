@@ -1,4 +1,4 @@
-"""Replication over training seeds (GPT-2 small) and on Qwen2.5-1.5B.
+"""Replication over training seeds (GPT-2 small) and on Qwen2.5-1.5B and Qwen2.5-7B (4-bit).
 
 Run from the repository root. Computes, for every adapter with likelihood and benchmark files,
 the comparison of logit- and weight-space scaling at equal divergence (likelihood, benchmarks,
@@ -70,7 +70,7 @@ pd.DataFrame(rows).to_csv(OUT + 'replication_bench_eq.csv', index=False)
 
 # 3. generation metrics per grid point and at equal divergence
 R = 'results/level2/rescore/'
-A = pd.concat([pd.read_csv(R + f'rescore__{x}.csv.gz') for x in ['gpt2', 'qwen', 'seeds', 'qwen15']])
+A = pd.concat([pd.read_csv(R + f'rescore__{x}.csv.gz') for x in ['gpt2', 'qwen', 'seeds', 'qwen15', 'qwen7b']])
 A = A[A.model != 'human']; c = A.continuation.fillna('').astype(str)
 A['fmt'] = (c.str.contains(r'<br\s*/?>|</br>|</|/>', regex=True) | c.map(lambda t: '\\n' in t) | c.map(lambda t: '  ' in t)).astype(float) * 100
 def rep2(t):
@@ -97,7 +97,7 @@ pd.DataFrame(out).to_csv(OUT + 'replication_eqdiv_gen.csv', index=False)
 # 4. paired tests on the replication runs (prompt-clustered bootstrap)
 rng = np.random.default_rng(0); rows = []
 sel = lambda g, m, l: g[(g.method == m) & (g['lambda'] == l)].sort_values(['prompt_id', 'sample']).reset_index(drop=True)
-keep = A.config.str.contains('seed') | (A.model == 'Qwen2.5-1.5B') | ((A.model == 'gpt2') & A.config.isin(['imdb_bal', 'pubmed']))
+keep = A.config.str.contains('seed') | A.model.isin(['Qwen2.5-1.5B', 'Qwen2.5-7B']) | ((A.model == 'gpt2') & A.config.isin(['imdb_bal', 'pubmed']))
 for (m, cfg), g in A[keep].groupby(['model', 'config']):
     for a, b in [(('dynalora', 1.0), ('dynalora', 3.0)), (('dynalora', 1.0), ('dynalora', 2.0)),
                  (('dynalora', 3.0), ('weight', 3.0)), (('dynalora', 2.0), ('weight', 2.0))]:

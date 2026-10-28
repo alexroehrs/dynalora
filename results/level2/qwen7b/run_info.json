@@ -1,0 +1,57 @@
+{
+  "args": {
+    "out": "/content/drive/MyDrive/dynalora_results/qwen7b",
+    "models": [
+      "Qwen/Qwen2.5-7B"
+    ],
+    "configs": [
+      "imdb_bal",
+      "pubmed"
+    ],
+    "n_samples": 20,
+    "lambdas": [
+      0.0,
+      0.5,
+      1.0,
+      1.5,
+      2.0,
+      3.0
+    ],
+    "gammas": [
+      1.0,
+      1.5,
+      2.0,
+      3.0
+    ],
+    "temps": [
+      0.7,
+      0.6,
+      0.5,
+      0.4,
+      0.3,
+      0.2
+    ],
+    "max_new_tokens": 50,
+    "ext_lm": "gpt2-large",
+    "no_ext": false,
+    "no_sentiment": false,
+    "skip_cfg": false,
+    "skip_weight": false,
+    "skip_temp": false,
+    "methods": [
+      "dynalora",
+      "weight"
+    ],
+    "adapters_dir": null,
+    "clf_configs": [
+      "imdb_bal",
+      "yelp",
+      "pubmed"
+    ],
+    "load_in_4bit": true,
+    "train_only": false,
+    "smoke": false
+  },
+  "domain_classifier_cv_accuracy": 0.9799299931250735,
+  "n_rows": 5200
+}
