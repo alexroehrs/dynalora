@@ -11,6 +11,10 @@ Inputs are the ``generations_all_metrics.csv`` files written by ``run_all.py``; 
 texts they contain are third-party data and are never written to the output, which keeps
 only identifiers and scores.
 
+The reference continuations are built with HTML tags removed (``evaluate.human_reference``).
+With ``--strip_html`` the same removal is applied to the generated continuations, so that the
+two sets are compared on equal terms; the output file then carries the suffix ``__nohtml``.
+
 Example (Colab, T4):
     pip install -q mauve-text faiss-cpu
     python scripts/mauve_eval.py --inputs "/content/drive/MyDrive/dynalora_results/*/generations_all_metrics.csv" \
@@ -24,12 +28,15 @@ import time
 
 import numpy as np
 import pandas as pd
+import re
+
 import torch
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 from dynalora import data as D  # noqa: E402
 
 KEYS = ['config', 'model', 'method', 'lambda', 'gamma', 'temperature']
+_HTML = re.compile(r"<[^>]*>")
 
 
 def log(msg):
@@ -73,6 +80,8 @@ def main():
     ap.add_argument('--featurizer', default='gpt2-large')
     ap.add_argument('--seeds', nargs='+', type=int, default=[1, 2, 3, 4, 5])
     ap.add_argument('--batch_size', type=int, default=32)
+    ap.add_argument('--strip_html', action='store_true',
+                    help='remove HTML tags from the generated continuations, as from the references')
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     files = sorted({f for p in a.inputs for f in glob.glob(p)})
@@ -81,6 +90,8 @@ def main():
         d = pd.read_csv(f); d['run'] = os.path.basename(os.path.dirname(f)); frames.append(d)
     d = pd.concat(frames, ignore_index=True)
     d['cont'] = d['continuation'].fillna('').astype(str)
+    if a.strip_html:
+        d['cont'] = d['cont'].map(lambda t: _HTML.sub(' ', t))
     d['base'] = d['config'].map(D.base_name)
     hum = d[d['method'] == 'human'].drop_duplicates(['base', 'sample'])
     gen = d[d['method'] != 'human']
@@ -105,7 +116,9 @@ def main():
         rows.append(dict(run='reference', config=b, model='human', method='human_split', n=h, n_ref=len(ix) - h,
                          mauve=m, mauve_sd=sd, featurizer=a.featurizer))
     out = pd.DataFrame(rows)
-    out.to_csv(os.path.join(a.out, f'mauve__{a.featurizer.split("/")[-1]}.csv'), index=False)
+    suffix = '__nohtml' if a.strip_html else ''
+    out['strip_html'] = a.strip_html
+    out.to_csv(os.path.join(a.out, f'mauve__{a.featurizer.split("/")[-1]}{suffix}.csv'), index=False)
     log(f'{len(out)} grid points')
     print(out[out.method.isin(['dynalora', 'weight'])].pivot_table(index=['model', 'config', 'method'],
           columns='lambda', values='mauve').round(2).to_string(), flush=True)
