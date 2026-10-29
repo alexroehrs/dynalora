@@ -1,0 +1,18 @@
+# PubMedQA, all 1,000 expert-labeled questions (PQA-L), with the prompt, answer choices
+# and metric of the lm-evaluation-harness task `pubmedqa`. That task reads the 500-question
+# test fold of bigbio/pubmed_qa through a dataset loading script; this one reads the
+# authors' Parquet release, whose single split holds the full labeled set.
+task: pubmedqa_labeled
+dataset_path: qiaojin/PubMedQA
+dataset_name: pqa_labeled
+output_type: multiple_choice
+test_split: train
+doc_to_text: !function utils.doc_to_text
+doc_to_target: final_decision
+doc_to_choice: ["yes", "no", "maybe"]
+metric_list:
+  - metric: acc
+    aggregation: mean
+    higher_is_better: true
+metadata:
+  version: 1.0

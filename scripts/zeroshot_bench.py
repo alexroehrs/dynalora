@@ -10,7 +10,13 @@ evaluated from the same requests:
 
 Output: ``bench__<model>__<config>.csv.gz`` with one row per method, lambda, task and
 document (accuracy and, where defined, length-normalized accuracy), so that intervals
-can be bootstrapped over documents.
+can be bootstrapped over documents. Only the scores are written, never the documents.
+
+``--tasks`` selects other harness tasks. Tasks defined under ``scripts/lm_eval_tasks``
+are registered as well: ``pubmedqa_labeled`` is the harness task ``pubmedqa`` (same
+prompt, yes/no/maybe choices scored by log-likelihood, accuracy) on all 1,000 labeled
+questions of PubMedQA instead of the 500-question test fold. Its abstracts are long, so
+it is run with ``--max_len 1024`` and written to its own directory.
 
 Example (Colab):
     pip install lm-eval
@@ -18,6 +24,10 @@ Example (Colab):
         --adapters_dir /content/drive/MyDrive/dynalora_results/gpt2/adapters \
         --configs imdb_neg imdb_bal imdb_bal_nohtml yelp pubmed \
         --out /content/drive/MyDrive/dynalora_results/bench
+    python scripts/zeroshot_bench.py --model gpt2 \
+        --adapters_dir /content/drive/MyDrive/dynalora_results/gpt2/adapters \
+        --configs pubmed imdb_bal --tasks pubmedqa_labeled --max_len 1024 --batch_size 8 \
+        --out /content/drive/MyDrive/dynalora_results/pubmedqa
 """
 import argparse
 import collections
@@ -34,15 +44,16 @@ from dynalora.generate import Generator  # noqa: E402
 
 LAMBDAS = [0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0]
 TASKS = ['lambada_openai', 'hellaswag', 'piqa', 'arc_easy']
+TASK_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lm_eval_tasks')
 
 
 def log(msg):
     print(time.strftime('%H:%M:%S'), msg, flush=True)
 
 
-def build_requests(tasks, limit):
+def build_requests(tasks, limit, include_path=TASK_DIR):
     from lm_eval.tasks import TaskManager, get_task_dict
-    td = get_task_dict(tasks, TaskManager())
+    td = get_task_dict(tasks, TaskManager(include_path=include_path))
     out = {}
     for name, task in td.items():
         task.build_all_requests(limit=limit, rank=0, world_size=1)
@@ -136,7 +147,9 @@ def main():
     ap.add_argument('--adapters_dir', required=True)
     ap.add_argument('--configs', nargs='+', required=True)
     ap.add_argument('--out', required=True)
-    ap.add_argument('--tasks', nargs='+', default=TASKS)
+    ap.add_argument('--tasks', nargs='+', default=TASKS,
+                    help='harness tasks, or tasks defined under --include_path (e.g. pubmedqa_labeled)')
+    ap.add_argument('--include_path', default=TASK_DIR, help='directory of additional task configs')
     ap.add_argument('--limit', type=int, default=1000)
     ap.add_argument('--lambdas', nargs='+', type=float, default=LAMBDAS)
     ap.add_argument('--load_in_4bit', action='store_true', help='4-bit NF4 base model (adapters trained with QLoRA)')
@@ -144,7 +157,7 @@ def main():
     ap.add_argument('--max_len', type=int, default=512)
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
-    tasks = build_requests(a.tasks, a.limit)
+    tasks = build_requests(a.tasks, a.limit, a.include_path)
     offsets, pairs = {}, []
     for name, task in tasks.items():
         offsets[name] = (len(pairs), len(pairs) + len(task.instances))
