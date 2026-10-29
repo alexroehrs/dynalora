@@ -21,6 +21,7 @@ where `y_base` and `y_lora` are the next-token logits of the same model with the
 | `scripts/llm_judge.py` | LLM-judge ratings (fluency, genre fit) on a stratified sample |
 | `scripts/analysis/` | analyses and figures of the paper (see its README) |
 | `notebooks/colab_run_all.ipynb`, `notebooks/colab_revision.ipynb`, `notebooks/colab_replication.ipynb` | drivers used on a Colab T4 GPU |
+| `notebooks/colab_pubmedqa.ipynb` | downstream task: PubMedQA accuracy along lambda (`scripts/zeroshot_bench.py --tasks pubmedqa_labeled`) |
 | `notebooks/colab_qwen7b.ipynb` | Qwen2.5-7B with a 4-bit NF4 base model (QLoRA, `--load_in_4bit`): training, likelihood, benchmarks, reduced generation grid, re-scoring and MAUVE |
 | `results/level2/gpt2/`, `results/level2/qwen/` | main runs: summary tables, per-generation scores |
 | `results/level2/sweep/` | learning-rate sweep on balanced IMDB (DynaLoRA only) |
@@ -31,8 +32,9 @@ where `y_base` and `y_lora` are the next-token logits of the same model with the
 | `results/level2/rescore/` | per-generation scores with SmolLM2-1.7B perplexity (`ext2_*`) and unified domain probability (`domain_prob_u`) |
 | `results/level2/likelihood/` | per-text likelihoods (`ll__` domain, `llgen__` general, `llneg__` negative IMDB reviews) and `ll_summary.csv` |
 | `results/level2/bench/` | per-document benchmark scores for every method and lambda |
+| `results/level2/pubmedqa/` | per-question PubMedQA scores (PQA-L, 1,000 questions) of the PubMed and balanced IMDB adapters of GPT-2, Qwen2.5-1.5B and Qwen2.5-7B, for every method and lambda (`notebooks/colab_pubmedqa.ipynb`) |
 | `results/level2/stats/` | bootstrap intervals, paired tests, LLM-judge ratings |
-| `results/level2/analysis/` | derived tables (equal divergence, entropy matching, formatting rates, paired tests on SmolLM2 perplexity, replication) |
+| `results/level2/analysis/` | derived tables (equal divergence, entropy matching, formatting rates, paired tests on SmolLM2 perplexity, replication, PubMedQA) |
 
 ## Data
 
@@ -60,6 +62,9 @@ python scripts/likelihood_tradeoff.py --model Qwen/Qwen2.5-7B --adapters_dir res
 python scripts/zeroshot_bench.py --model Qwen/Qwen2.5-7B --adapters_dir results/level2/qwen7b/adapters --configs imdb_bal pubmed --load_in_4bit --batch_size 4 --limit 500 --lambdas 0 0.5 1 1.5 2 2.5 3 --out results/level2/bench
 python scripts/run_all.py --out results/level2/qwen7b --models Qwen/Qwen2.5-7B --configs imdb_bal pubmed --load_in_4bit --methods dynalora weight --lambdas 0 0.5 1 1.5 2 3 --clf_configs imdb_bal yelp pubmed --n_samples 20
 python scripts/analysis/replication.py
+# PubMedQA along lambda (see notebooks/colab_pubmedqa.ipynb for the three models)
+python scripts/zeroshot_bench.py --model gpt2 --adapters_dir results/level2/gpt2/adapters --configs pubmed imdb_bal --tasks pubmedqa_labeled --max_len 1024 --batch_size 8 --out results/level2/pubmedqa
+python scripts/analysis/pubmedqa.py --inputs results/level2/pubmedqa --by_answer
 python scripts/run_all.py --smoke --out /tmp/smoke   # CPU smoke test with a random tiny model
 ```
 
