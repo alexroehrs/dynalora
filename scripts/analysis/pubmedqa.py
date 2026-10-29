@@ -7,6 +7,12 @@ base model (lambda 0), with 95% bootstrap intervals over documents;
 ``pubmedqa_eq.csv``: accuracy of logit minus weight scaling at equal KL divergence from
 the base model, matched as in ``bench_eq.py`` (``kl_set`` general, as there, and also on
 the adapter's domain text), with a paired bootstrap over documents.
+
+With ``--by_answer`` (needs the dataset, loaded from the Hugging Face Hub at run time and
+not stored here), ``pubmedqa_by_answer.csv`` adds the accuracy per gold answer (yes, no,
+maybe), which separates a change in the model's answer prior from a change in its reading
+of the abstract; ``doc_id`` is the position of the question in the ``pqa_labeled`` split,
+as enumerated by the harness.
 """
 import argparse
 import glob
@@ -75,12 +81,26 @@ def eq(g, ll, nboot, rng):
     return rows
 
 
+def by_answer(B):
+    from datasets import load_dataset
+    ds = load_dataset('qiaojin/PubMedQA', 'pqa_labeled', split='train')
+    gold = pd.Series(ds['final_decision'], name='answer')
+    gold.index.name = 'doc_id'
+    X = B.merge(gold, left_on='doc_id', right_index=True)
+    g = X.groupby(['task', 'model', 'config', 'method', 'lambda', 'answer']).acc.agg(['mean', 'size']).reset_index()
+    g = g.rename(columns={'lambda': 'lam', 'mean': 'acc', 'size': 'n'})
+    g['acc'] *= 100
+    share = gold.value_counts(normalize=True).rename('share_of_questions') * 100
+    return g.merge(share, left_on='answer', right_index=True)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--inputs', default='results/level2/pubmedqa')
     ap.add_argument('--ll', default='results/level2/likelihood/ll_summary.csv')
     ap.add_argument('--out', default='results/level2/analysis')
     ap.add_argument('--nboot', type=int, default=2000)
+    ap.add_argument('--by_answer', action='store_true', help='also write accuracy per gold answer (loads the dataset)')
     a = ap.parse_args()
     B = load(a.inputs)
     ll = pd.read_csv(a.ll)
@@ -101,6 +121,10 @@ def main():
     print(C.pivot_table(index=['model', 'config', 'lam'], columns='method', values='acc').round(1).to_string())
     if len(E):
         print(E.round(2).to_string())
+    if a.by_answer:
+        A = by_answer(B)
+        A.to_csv(os.path.join(a.out, 'pubmedqa_by_answer.csv'), index=False)
+        print(A.pivot_table(index=['model', 'config', 'method', 'answer'], columns='lam', values='acc').round(1).to_string())
 
 
 if __name__ == '__main__':
