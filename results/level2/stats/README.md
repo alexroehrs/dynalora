@@ -5,3 +5,5 @@
 - `judge_cells_ci.csv`: LLM-judge ratings (1 to 5) per cell of the stratified sample (50 texts per cell), for each judge (`Qwen` = Qwen2.5-7B-Instruct, `OLMo` = OLMo-2-1124-7B-Instruct): mean fluency `F` and genre fit `D` with the half-width of the 95% prompt-clustered bootstrap interval (`Fhw`, `Dhw`). Cells: `dyn<lambda>` DynaLoRA, `w<lambda>` weight-space scaling, `cold` plain adapter at T = 0.5, `cfg` classifier-free guidance at gamma = 1.5, `ref` held-out reference texts. Produced by `scripts/llm_judge.py`.
 
 Inter-judge agreement: fluency, Spearman 0.51 over items and Pearson 0.55 over cell means; genre fit, 0.26 and 0.00.
+
+Note: `paired_tests.csv` and `ci_bootstrap.csv` were computed from the per-run `domain_prob` column, which for the Qwen2.5-0.5B run comes from that run's own classifier fit. The paper reports domain probabilities from the single classifier fit used for all runs (`domain_prob_u` in `results/level2/rescore/`), whose intervals and paired tests are in `results/level2/analysis/curves_ci.csv` and `paired_ppl2_fmt.csv`.
