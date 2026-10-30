@@ -18,6 +18,10 @@ Example (Colab, T4; adapters trained by run_all.py):
         --adapters_dir /content/drive/MyDrive/dynalora_results/gpt2/adapters \
         --configs imdb_neg imdb_bal imdb_bal_nohtml yelp pubmed \
         --out /content/drive/MyDrive/dynalora_results/likelihood
+    # general text only, for the task adapter (no domain corpus; scripts/train_task_adapter.py)
+    python scripts/likelihood_tradeoff.py --model gpt2 --sets general \
+        --adapters_dir /content/drive/MyDrive/dynalora_results/task/adapters --configs pubmedqa_task \
+        --out /content/drive/MyDrive/dynalora_results/task/likelihood
 """
 import argparse
 import os
@@ -44,15 +48,19 @@ def log(msg):
 PREFIX = {'domain': 'll', 'general': 'llgen', 'domain_neg': 'llneg'}
 
 
-def eval_texts(cfg_name, n_domain, n_general, smoke=False):
+def eval_texts(cfg_name, n_domain, n_general, smoke=False, need_domain=True):
+    """Held-out domain texts and general texts; with ``need_domain=False`` (only ``--sets general``,
+    e.g. for the task adapter ``pubmedqa_task``, which has no domain corpus) the domain list is empty."""
     if smoke:
         dom = ['this movie was great and the acting was fine'] * n_domain
         gen = ['the river flows through the valley of the old town'] * n_general
         return dom, gen
-    cfg = D.load_config(cfg_name)
-    held = cfg['heldout'][-n_domain:]          # held-out texts, never used in training
-    if cfg_name == 'imdb_bal_nohtml':
-        held = [re.sub(r'\s+', ' ', _HTML.sub(' ', t)) for t in held]
+    held = []
+    if need_domain:
+        cfg = D.load_config(cfg_name)
+        held = cfg['heldout'][-n_domain:]          # held-out texts, never used in training
+        if cfg_name == 'imdb_bal_nohtml':
+            held = [re.sub(r'\s+', ' ', _HTML.sub(' ', t)) for t in held]
     general = _wikitext_train(n_general)   # disjoint from the test-split paragraphs used by the classifier
     return held, general
 
@@ -146,7 +154,8 @@ def main():
         adir = os.path.join(a.adapters_dir, f'{mtag}__{cname}')
         log(f'loading {a.model} + {adir}')
         gen = Generator(a.model, adir, load_in_4bit=a.load_in_4bit)
-        dom, general = eval_texts(cname, a.n_domain, a.n_general, a.smoke)
+        dom, general = eval_texts(cname, a.n_domain, a.n_general, a.smoke,
+                                  need_domain=any(st == 'domain' for st, _ in todo))
         for st, path in todo:
             if st == 'domain_neg':
                 texts = dom if a.smoke else D.imdb_test_by_label(a.n_domain, 0)

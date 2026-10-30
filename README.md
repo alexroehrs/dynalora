@@ -16,12 +16,15 @@ where `y_base` and `y_lora` are the next-token logits of the same model with the
 | `scripts/run_all.py` | end-to-end run: train adapters, generate, score, summarize (`--methods`, `--adapters_dir`, `--clf_configs`; configuration suffixes `__lr<value>` and `__seed<n>` override the learning rate and the training seed) |
 | `scripts/likelihood_tradeoff.py`, `scripts/likelihood_summary.py` | teacher-forced likelihood and KL divergence per lambda on domain text, general text, and negative IMDB reviews |
 | `scripts/rescore.py` | re-scoring with SmolLM2-1.7B and a unified domain classifier |
-| `scripts/zeroshot_bench.py` | zero-shot LAMBADA, HellaSwag, PIQA, ARC-Easy for both forms of scaling (requests from `lm-evaluation-harness`) |
+| `scripts/zeroshot_bench.py` | zero-shot LAMBADA, HellaSwag, PIQA, ARC-Easy for both forms of scaling (requests from `lm-evaluation-harness`); `--tasks pubmedqa_labeled` / `pubmedqa_test500` for the PubMedQA tasks defined under `scripts/lm_eval_tasks/` |
+| `scripts/train_task_adapter.py` | task adapter `pubmedqa_task`: LoRA trained on the PubMedQA question-answering task (harness prompt + answer word, loss on the answer tokens; `pqa_artificial` subset plus the training half of the labeled questions), same recipe as `dynalora/train.py` |
+| `scripts/latency.py` | decoding cost per generated token and peak memory of the base model, the plain adapter, weight-space scaling and logit-space scaling (two cached forward passes per step) |
 | `scripts/bootstrap_ci.py` | prompt-clustered bootstrap intervals and Holm-adjusted paired tests |
 | `scripts/llm_judge.py` | LLM-judge ratings (fluency, genre fit) on a stratified sample |
 | `scripts/analysis/` | analyses and figures of the paper (see its README) |
 | `notebooks/colab_run_all.ipynb`, `notebooks/colab_revision.ipynb`, `notebooks/colab_replication.ipynb` | drivers used on a Colab T4 GPU |
 | `notebooks/colab_pubmedqa.ipynb` | downstream task: PubMedQA accuracy along lambda (`scripts/zeroshot_bench.py --tasks pubmedqa_labeled`) |
+| `notebooks/colab_task_adapter.ipynb` | task adapter (training, PubMedQA test half, general benchmarks and general-text KL along lambda, GPT-2 and Qwen2.5-1.5B) and decoding latency of the two forms |
 | `notebooks/colab_qwen7b.ipynb` | Qwen2.5-7B with a 4-bit NF4 base model (QLoRA, `--load_in_4bit`): training, likelihood, benchmarks, reduced generation grid, re-scoring and MAUVE |
 | `results/level2/gpt2/`, `results/level2/qwen/` | main runs: summary tables, per-generation scores |
 | `results/level2/sweep/` | learning-rate sweep on balanced IMDB (DynaLoRA only) |
@@ -33,8 +36,10 @@ where `y_base` and `y_lora` are the next-token logits of the same model with the
 | `results/level2/likelihood/` | per-text likelihoods (`ll__` domain, `llgen__` general, `llneg__` negative IMDB reviews) and `ll_summary.csv` |
 | `results/level2/bench/` | per-document benchmark scores for every method and lambda |
 | `results/level2/pubmedqa/` | per-question PubMedQA scores (PQA-L, 1,000 questions) of the PubMed and balanced IMDB adapters of GPT-2, Qwen2.5-1.5B and Qwen2.5-7B, for every method and lambda (`notebooks/colab_pubmedqa.ipynb`) |
+| `results/level2/task/` | task adapter `pubmedqa_task` of GPT-2 and Qwen2.5-1.5B: per-question scores on the PubMedQA test half (`pubmedqa/`), on the general benchmarks (`bench/`), general-text likelihood and KL (`likelihood/`) (`notebooks/colab_task_adapter.ipynb`) |
+| `results/level2/latency/` | `latency__<model>.csv`: milliseconds per generated token and peak memory of the four decoding procedures (`scripts/latency.py`) |
 | `results/level2/stats/` | bootstrap intervals, paired tests, LLM-judge ratings |
-| `results/level2/analysis/` | derived tables (equal divergence, entropy matching, formatting rates, paired tests on SmolLM2 perplexity, replication, PubMedQA) |
+| `results/level2/analysis/` | derived tables (equal divergence, entropy matching, formatting rates, paired tests on SmolLM2 perplexity, replication, PubMedQA, task adapter) |
 
 ## Data
 
@@ -65,6 +70,14 @@ python scripts/analysis/replication.py
 # PubMedQA along lambda (see notebooks/colab_pubmedqa.ipynb for the three models)
 python scripts/zeroshot_bench.py --model gpt2 --adapters_dir results/level2/gpt2/adapters --configs pubmed imdb_bal --tasks pubmedqa_labeled --max_len 1024 --batch_size 8 --out results/level2/pubmedqa
 python scripts/analysis/pubmedqa.py --inputs results/level2/pubmedqa --by_answer
+# Task adapter trained on PubMedQA itself, and decoding latency (see notebooks/colab_task_adapter.ipynb)
+python scripts/train_task_adapter.py --model gpt2 --batch_size 4 --grad_accum 4 --adapters_dir results/level2/task/adapters
+python scripts/zeroshot_bench.py --model gpt2 --adapters_dir results/level2/task/adapters --configs pubmedqa_task --tasks pubmedqa_test500 --max_len 1024 --batch_size 8 --out results/level2/task/pubmedqa
+python scripts/zeroshot_bench.py --model gpt2 --adapters_dir results/level2/task/adapters --configs pubmedqa_task --limit 1000 --out results/level2/task/bench
+python scripts/likelihood_tradeoff.py --model gpt2 --sets general --adapters_dir results/level2/task/adapters --configs pubmedqa_task --out results/level2/task/likelihood
+python scripts/analysis/task_adapter.py --inputs results/level2/task/pubmedqa --bench results/level2/task/bench --likelihood results/level2/task/likelihood --by_answer
+python scripts/latency.py --model gpt2 --adapters_dir results/level2/gpt2/adapters --config pubmed --out results/level2/latency
+python scripts/train_task_adapter.py --smoke --n_train 16 --max_len 256 --adapters_dir /tmp/task_smoke/adapters   # CPU smoke test, synthetic examples
 python scripts/run_all.py --smoke --out /tmp/smoke   # CPU smoke test with a random tiny model
 ```
 

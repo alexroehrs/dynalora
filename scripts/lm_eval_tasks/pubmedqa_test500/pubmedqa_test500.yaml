@@ -1,0 +1,20 @@
+# PubMedQA, the test half of the 1,000 expert-labeled questions (PQA-L) used for the task
+# adapter of scripts/train_task_adapter.py, with the prompt, answer choices and metric of the
+# lm-evaluation-harness task `pubmedqa` (same as pubmedqa_labeled). The labeled set is split
+# deterministically by utils.process_docs: sort by pubid, shuffle with numpy seed 0, first 500
+# questions train the adapter, the last 500 are evaluated here (doc_id 0..499 in that order).
+task: pubmedqa_test500
+dataset_path: qiaojin/PubMedQA
+dataset_name: pqa_labeled
+output_type: multiple_choice
+test_split: train
+process_docs: !function utils.process_docs
+doc_to_text: !function utils.doc_to_text
+doc_to_target: final_decision
+doc_to_choice: ["yes", "no", "maybe"]
+metric_list:
+  - metric: acc
+    aggregation: mean
+    higher_is_better: true
+metadata:
+  version: 1.0

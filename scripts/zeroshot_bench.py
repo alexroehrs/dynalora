@@ -16,7 +16,10 @@ can be bootstrapped over documents. Only the scores are written, never the docum
 are registered as well: ``pubmedqa_labeled`` is the harness task ``pubmedqa`` (same
 prompt, yes/no/maybe choices scored by log-likelihood, accuracy) on all 1,000 labeled
 questions of PubMedQA instead of the 500-question test fold. Its abstracts are long, so
-it is run with ``--max_len 1024`` and written to its own directory.
+it is run with ``--max_len 1024`` and written to its own directory. ``pubmedqa_test500`` is the
+same task on the test half of the labeled set (500 questions; the other half trains the task
+adapter ``pubmedqa_task`` of ``scripts/train_task_adapter.py``, whose ``--configs`` name is read
+from ``--adapters_dir`` exactly like the other adapters).
 
 Example (Colab):
     pip install lm-eval
