@@ -36,7 +36,7 @@ where `y_base` and `y_lora` are the next-token logits of the same model with the
 | `results/level2/likelihood/` | per-text likelihoods (`ll__` domain, `llgen__` general, `llneg__` negative IMDB reviews) and `ll_summary.csv` |
 | `results/level2/bench/` | per-document benchmark scores for every method and lambda |
 | `results/level2/pubmedqa/` | per-question PubMedQA scores (PQA-L, 1,000 questions) of the PubMed and balanced IMDB adapters of GPT-2, Qwen2.5-1.5B and Qwen2.5-7B, for every method and lambda (`notebooks/colab_pubmedqa.ipynb`) |
-| `results/level2/task/` | task adapter `pubmedqa_task` of GPT-2 and Qwen2.5-1.5B: per-question scores on the PubMedQA test half (`pubmedqa/`), on the general benchmarks (`bench/`), general-text likelihood and KL (`likelihood/`) (`notebooks/colab_task_adapter.ipynb`) |
+| `results/level2/task/` | task adapter `pubmedqa_task` of GPT-2 and Qwen2.5-1.5B: per-question scores on the PubMedQA test half (`pubmedqa/`), on the general benchmarks (`bench/`), general-text likelihood and KL (`likelihood/`) (`notebooks/colab_task_adapter.ipynb`); `SUMMARY.md` summarizes the results with the latency |
 | `results/level2/latency/` | `latency__<model>.csv`: milliseconds per generated token and peak memory of the four decoding procedures (`scripts/latency.py`) |
 | `results/level2/stats/` | bootstrap intervals, paired tests, LLM-judge ratings |
 | `results/level2/analysis/` | derived tables (equal divergence, entropy matching, formatting rates, paired tests on SmolLM2 perplexity, replication, PubMedQA, task adapter) |
