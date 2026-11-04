@@ -1,4 +1,4 @@
-# Inference-Time Strength Control of LoRA Adapters: Comparison of Logit-Space Scaling, Weight-Space Scaling, Temperature, and Prompt Guidance
+# Attenuating and Amplifying LoRA Adapters at Inference Time
 
 Code, generated texts, and per-generation scores for the paper. DynaLoRA scales the contribution of a LoRA adapter at decoding time as
 
@@ -6,7 +6,7 @@ Code, generated texts, and per-generation scores for the paper. DynaLoRA scales 
 y = y_base + lambda * (y_lora - y_base)
 ```
 
-where `y_base` and `y_lora` are the next-token logits of the same model with the adapter disabled and enabled. The study sweeps lambda from 0 to 3 on six adapters (five on GPT-2 small, one on Qwen2.5-0.5B), on a learning-rate sweep, and on a replication with two further training seeds and on Qwen2.5-1.5B and Qwen2.5-7B (4-bit), and compares DynaLoRA with weight-space scaling of the LoRA update, classifier-free guidance with a domain prefix, and the plain adapter sampled at matched entropy, on generation metrics, LLM-judge ratings, teacher-forced likelihood, and zero-shot benchmarks.
+where `y_base` and `y_lora` are the next-token logits of the same model with the adapter disabled and enabled. The study sweeps lambda from 0 to 3, attenuating (lambda < 1) and amplifying (lambda > 1) the adapter, on six adapters (five on GPT-2 small, one on Qwen2.5-0.5B), on a learning-rate sweep, and on a replication with two further training seeds and on Qwen2.5-1.5B and Qwen2.5-7B (4-bit). It compares logit-space scaling (DynaLoRA) with weight-space scaling of the LoRA update, at equal factor and at equal KL divergence from the base model, and with two adapter-free controls, classifier-free guidance with a domain prefix and a lower sampling temperature (the plain adapter at matched entropy). The measures are generation metrics, LLM-judge ratings, teacher-forced likelihood, zero-shot benchmarks, PubMedQA accuracy with the corpus adapters and with adapters trained on the task itself, and the decoding cost of the two forms.
 
 ## Layout
 
