@@ -1,4 +1,4 @@
-# Attenuating and Amplifying LoRA Adapters at Inference Time: A Comparison of Logit-Space, Weight-Space, and Adapter-Free Controls
+# Attenuating and Amplifying LoRA Adapters at Inference Time: A Comparison of Logit-Space, Weight-Space, Temperature, and Prompt Controls
 
 Code, generated texts, and per-generation scores for the paper. DynaLoRA scales the contribution of a LoRA adapter at decoding time as
 
