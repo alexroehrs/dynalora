@@ -1,0 +1,13 @@
+# Pinned versions used to run the experiments (Google Colab, November 2026).
+torch==2.14.1
+transformers==5.22.2
+tokenizers==0.23.3
+peft==0.21.2
+datasets==5.1.0
+accelerate==1.15.0
+numpy==2.4.6
+pandas==2.2.3
+lm-eval==0.4.13
+rouge-score==0.1.2
+matplotlib
+pytest
