@@ -421,6 +421,140 @@ for model in (Q, P):
     N[f'bench_base_{model}'] = round(float(b.base.iloc[0]), 1)
 g = full[(full.task == 'gsm8k') & (full.seed == 42) & (full.factor == 0) & (full.form == 'logit')]
 N['gsm8k_base_ended'] = {m: round(100 * float(x), 1) for m, x in zip(g.model, g.ended)}
+
+
+# ---- plausibility constraint and throughput (when their analysis tables exist) --------------------------------
+def _opt(name):
+    f = f'{A}/{name}.csv'
+    return pd.read_csv(f) if os.path.exists(f) else None
+
+
+pl, th = _opt('plausibility'), _opt('throughput')
+if pl is not None:
+    fac = sorted(pl.factor.unique())
+    rows = []
+    for model in (Q, P):
+        for t in ('gsm8k', 'samsum'):
+            g = pl[(pl.model == model) & (pl.task == t) & (pl.seed == 42)].set_index('factor')
+            if g.empty:
+                continue
+            mname = 'Qwen2.5-7B' if model == Q else 'Phi-4-mini'
+            rows.append(f'{mname} & {TL[t]} & Unconstrained & {100 * g.at_one.iloc[0]:.1f} & '
+                        + ' & '.join(f1(100 * g.unconstrained[f]) if f in g.index else '--' for f in fac) + r' \\')
+            rows.append(f' & & Constrained & {100 * g.at_one.iloc[0]:.1f} & '
+                        + ' & '.join(f1(100 * g.score[f]) if f in g.index else '--' for f in fac) + r' \\')
+        if model == Q:
+            rows.append(r'\midrule')
+    write('tab_plaus.tex', r"""\begin{table}[!t]
+\centering
+\caption{Own-task score (\%%) under logit-space amplification with and without the plausibility constraint (seed 42).}
+\label{tab:plaus}
+\setlength{\tabcolsep}{3.4pt}
+\fontsize{7.5}{9.2}\selectfont
+\begin{tabular}{lll c %s}
+\toprule
+Model & Task & Rule & 1 & %s \\
+\midrule
+%s
+\bottomrule
+\end{tabular}
+\end{table}
+""" % ('c' * len(fac), ' & '.join(f'{f:g}' for f in fac), '\n'.join(rows)))
+    N['plaus'] = dict(n=len(pl), better_than_one=int((pl.delta_lo > 0).sum()), worse_than_one=int((pl.delta_hi < 0).sum()),
+                      best_delta=round(100 * float(pl.delta.max()), 1), best_delta_hi=round(100 * float(pl.delta_hi.max()), 1),
+                      better_than_unconstrained=int((pl.delta_unconstrained_lo > 0).sum()),
+                      worse_than_unconstrained=int((pl.delta_unconstrained_hi < 0).sum()),
+                      identical_to_unconstrained=int((pl.delta_unconstrained.abs() < 1e-12).sum()),
+                      ended_min=round(100 * float(pl.ended.min()), 1))
+if th is not None:
+    order = ['base', 'adapter', 'weight', 'weight_merged', 'logit', 'logit_plaus']
+    lab = {'base': 'Base model', 'adapter': 'Adapter (factor 1)', 'weight': 'Weight space, active',
+           'weight_merged': 'Weight space, merged', 'logit': 'Logit space', 'logit_plaus': 'Logit space, constrained'}
+    bss = sorted(th.batch_size.unique())
+    rows = []
+    for c in order:
+        cells = []
+        for model in (Q, P):
+            for b in bss:
+                g = th[(th.model == model) & (th.config == c) & (th.batch_size == b)]
+                cells.append(f'{g.tokens_per_s.iloc[0]:.1f} ({g.relative_to_adapter.iloc[0]:.2f})' if len(g) else '--')
+        rows.append(f'{lab[c]} & ' + ' & '.join(cells) + r' \\')
+    write('tab_throughput.tex', r"""\begin{table}[!t]
+\centering
+\caption{Decoding throughput in tokens per second (ratio to the adapter).}
+\label{tab:throughput}
+\setlength{\tabcolsep}{3pt}
+\fontsize{7.5}{9.2}\selectfont
+\begin{tabular}{l %s}
+\toprule
+ & %s \\
+Configuration & %s \\
+\midrule
+%s
+\bottomrule
+\end{tabular}
+\end{table}
+""" % ('c' * (2 * len(bss)),
+       ' & '.join(r'\multicolumn{%d}{c}{%s}' % (len(bss), m) for m in ('Qwen2.5-7B', 'Phi-4-mini')),
+       ' & '.join(f'Batch {b}' for _ in (Q, P) for b in bss),
+       '\n'.join(rows)))
+    N['throughput'] = {f'{m.split("-")[0]}_{c}_b{b}': (float(g.tokens_per_s.iloc[0]), round(float(g.relative_to_adapter.iloc[0]), 2),
+                                                        float(g.peak_gb.iloc[0]))
+                       for (m, c, b), g in th.groupby(['model', 'config', 'batch_size'])}
+
+# ---- equal divergence: the numbers quoted in the text ---------------------------------------------------------
+e = eq[eq.factor_logit.notna()].copy()
+e['d'] = 100 * e.weight_minus_logit; e['lo'] = 100 * e.diff_lo; e['hi'] = 100 * e.diff_hi
+e['sig'] = (e.lo > 0) | (e.hi < 0)
+
+
+def _eqstats(x):
+    return dict(n=len(x), within2=int((x.d.abs() <= 2).sum()), median_abs=round(float(x.d.abs().median()), 2),
+                max_abs=round(float(x.d.abs().max()), 1), significant=int(x.sig.sum()),
+                weight_ahead=int((x.lo > 0).sum()), logit_ahead=int((x.hi < 0).sum()),
+                ci_within2=int(((x.lo >= -2) & (x.hi <= 2)).sum()), ci_within3=int(((x.lo >= -3) & (x.hi <= 3)).sum()),
+                ci_within5=int(((x.lo >= -5) & (x.hi <= 5)).sum()))
+
+
+N['eqdiv_all'] = _eqstats(e)
+N['eqdiv_Qwen'] = _eqstats(e[e.model == Q]); N['eqdiv_Phi'] = _eqstats(e[e.model == P])
+N['eqdiv_upto_1.25'] = _eqstats(e[e.factor_weight <= 1.25])
+N['eqdiv_matched_0.9_1.1'] = _eqstats(e[e.factor_logit.between(0.9, 1.1)])
+N['eqdiv_matched_elsewhere'] = _eqstats(e[~e.factor_logit.between(0.9, 1.1)])
+N['eqdiv_above_10'] = [(r.model, r.task, int(r.seed), r.factor_weight, round(r.d, 1)) for r in e[e.d.abs() > 10].itertuples()]
+ms = e[e.model == Q].groupby(['task', 'factor_weight']).d.mean()
+N['eqdiv_Qwen_seed_means'] = dict(n=len(ms), within2=int((ms.abs() <= 2).sum()), outside=[(k, round(v, 1)) for k, v in ms[ms.abs() > 2].items()])
+N['eqdiv_sig_Qwen_max_weight_ahead'] = round(float(e[(e.model == Q) & (e.lo > 0)].d.max()), 1) if ((e.model == Q) & (e.lo > 0)).any() else None
+ps = e[(e.model == P) & e.sig]
+N['eqdiv_sig_Phi_above1'] = dict(logit_ahead=int(((ps.hi < 0) & (ps.factor_weight > 1)).sum()),
+                                 on_gsm8k_samsum_from_1_5=int(((ps.hi < 0) & (ps.factor_weight >= 1.5) & ps.task.isin(['gsm8k', 'samsum'])).sum()))
+for model in (Q, P):
+    x = e[e.model == model]
+    N[f'matched_range_{model}'] = {w: (round(float(x[x.factor_weight == w].factor_logit.min()), 2), round(float(x[x.factor_weight == w].factor_logit.max()), 2))
+                                   for w in sorted(x.factor_weight.unique())}
+# width of the logit-space grid interval in which each matched factor falls
+widths = []
+for r in e.itertuples():
+    g = np.sort(kl[(kl.model == r.model) & (kl.task == r.task) & (kl.seed == r.seed) & (kl.ckpt == 100) & (kl.form == 'logit')].factor.unique())
+    i = min(max(int(np.searchsorted(g, r.factor_logit)), 1), len(g) - 1)
+    widths.append(g[i] - g[i - 1])
+e['width'] = widths
+N['eqdiv_interval_width'] = {f'{w:g}': int(c) for w, c in e.width.round(3).value_counts().sort_index().items()}
+N['eqdiv_logit_grid'] = sorted(float(x) for x in kl[(kl.model == Q) & (kl.form == 'logit') & (kl.seed == 42) & (kl.task == 'samsum')].factor.unique())
+
+# ---- share of each answer among the gold labels and the predictions of the base model (multiple choice) ---------
+for model in (Q, P):
+    for t in ('pubmedqa', 'yelp5'):
+        f = os.path.join(A, '..', 'scores', f'{model}__{t}__s42', 'own__logit.csv')
+        if os.path.exists(f):
+            d = pd.read_csv(f, dtype={'gold': str, 'pred': str})
+            d = d[d.factor == 0]
+            N[f'labels_{model}_{t}'] = dict(gold={k: round(100 * v, 1) for k, v in d.gold.value_counts(normalize=True).items()},
+                                            base_pred={k: round(100 * v, 1) for k, v in d.pred.value_counts(normalize=True).items()},
+                                            base_macro_f1=None)
+mf = full[(full.seed == 42) & full.task.isin(['pubmedqa', 'yelp5']) & full.factor.isin([0, 1]) & (full.form == 'logit')]
+N['macro_f1'] = {f'{r.model}_{r.task}_{r.factor:g}': round(100 * float(r.macro_f1), 1) for r in mf.itertuples()} if 'macro_f1' in mf else {}
+
 with open(os.path.join(OUT, 'numbers.txt'), 'w') as f:
     for k, v in N.items():
         f.write(f'{k}: {v}\n')
