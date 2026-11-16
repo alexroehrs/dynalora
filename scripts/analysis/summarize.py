@@ -22,6 +22,11 @@ to ``<results>/level4/analysis/``:
                         bootstrap interval, and the best factor of each form;
 * ``truncated.csv``     own-task score of the adapters saved at 10%, 20% and 40% of the training steps across
                         factors, against the fully trained adapter at factor 1;
+* ``plausibility.csv``  logit-space amplification with the plausibility constraint
+                        (``scripts/eval_plausibility.py``): change of the own-task score from factor 1 and from
+                        the unconstrained point of the same factor, with paired bootstrap intervals;
+* ``throughput.csv``    median decoding throughput per configuration and batch size (``scripts/throughput.py``),
+                        with its ratio to the adapter as trained;
 * ``fig_task_curves__<model>.pdf``, ``fig_task_frontier__<model>.pdf``, ``fig_task_truncated.pdf``;
 * ``SUMMARY.md``        the main numbers in sentences.
 
@@ -411,6 +416,48 @@ def summary(cv, fr, eq, at, am, tr, sd):
     return '\n'.join(L) + '\n'
 
 
+def plausibility(scores, rng):
+    """Constrained logit-space amplification against factor 1 and against the unconstrained rule."""
+    rows = []
+    dt = {'gold': str, 'pred': str, 'item': str}
+    for d in sorted(glob.glob(os.path.join(scores, '*'))):
+        m = NAME.match(os.path.basename(d))
+        p, own = os.path.join(d, 'plaus__logit.csv'), os.path.join(d, 'own__logit.csv')
+        if not m or not os.path.exists(p) or not os.path.exists(own):
+            continue
+        pl = pd.read_csv(p, dtype=dt)
+        w = _wide(_with_ext(own))
+        if 1.0 not in w:
+            continue
+        for (alpha, lam), g in pl.groupby(['alpha', 'factor']):
+            s = g.drop_duplicates('item').set_index('item')['score']
+            d1 = (s - w[1.0]).dropna()
+            m1, lo1, hi1 = ci(d1, rng)
+            r = dict(model=m['model'], task=m['task'], seed=int(m['seed']), ckpt=int(m['ckpt'] or 100), alpha=alpha,
+                     factor=lam, n=len(s), score=s.mean(), at_one=w[1.0].reindex(s.index).mean(), delta=m1,
+                     delta_lo=lo1, delta_hi=hi1, ended=g.ended.astype(float).mean(), n_tokens=g.n_tokens.mean())
+            if lam in w:
+                du = (s - w[lam]).dropna()
+                mu, lou, hiu = ci(du, rng)
+                r.update(unconstrained=w[lam].reindex(s.index).mean(), delta_unconstrained=mu,
+                         delta_unconstrained_lo=lou, delta_unconstrained_hi=hiu)
+            rows.append(r)
+    return pd.DataFrame(rows)
+
+
+def throughput(tdir):
+    """Median tokens per second by model, configuration and batch size, and its ratio to the adapter."""
+    fs = sorted(glob.glob(os.path.join(tdir, '*.csv')))
+    if not fs:
+        return pd.DataFrame()
+    df = pd.concat([pd.read_csv(f) for f in fs], ignore_index=True)
+    g = df.groupby(['model', 'task', 'config', 'factor', 'alpha', 'batch_size', 'gpu'], as_index=False).agg(
+        tokens_per_s=('tokens_per_s', 'median'), peak_gb=('peak_gb', 'max'), repeats=('repeat', 'count'))
+    ref = g[g.config == 'adapter'].set_index(['model', 'batch_size'])['tokens_per_s']
+    g['relative_to_adapter'] = [r.tokens_per_s / ref.get((r.model, r.batch_size), np.nan) for r in g.itertuples()]
+    return g
+
+
 def main():
     ap = add_results_arg(argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter))
     ap.add_argument('--level', default='level4', help='subdirectory of the results root (default: level4)')
@@ -421,12 +468,14 @@ def main():
     data = load(os.path.join(root, 'scores'))
     if not data:
         raise SystemExit(f'no scores under {root}/scores')
-    r_cv, r_cr, r_eq, r_am = (np.random.default_rng([a.seed, i]) for i in range(4))   # one stream per analysis
+    r_cv, r_cr, r_eq, r_am, r_pl = (np.random.default_rng([a.seed, i]) for i in range(5))   # one stream per analysis
     cv = curves(data, r_cv); cr = cross(data, r_cr); be = bench(os.path.join(root, 'bench'))
     fr = frontier(cv, cr, be); kl = kl_table(data); eq = equal_divergence(data, kl, r_eq)
     at = attenuation(cv); am = amplification(data, r_am); tr = truncated(cv); sd = seeds(cv)
+    pl = plausibility(os.path.join(root, 'scores'), r_pl); th = throughput(os.path.join(root, 'throughput'))
     for name, df in (('curves', cv), ('curves_seeds', sd), ('cross', cr), ('bench', be), ('frontier', fr), ('kl', kl),
-                     ('equal_divergence', eq), ('attenuation', at), ('amplification', am), ('truncated', tr)):
+                     ('equal_divergence', eq), ('attenuation', at), ('amplification', am), ('truncated', tr),
+                     ('plausibility', pl), ('throughput', th)):
         if df is None or df.empty:
             print(f'{name}: no input yet, skipped'); continue
         df.to_csv(os.path.join(out, f'{name}.csv'), index=False)

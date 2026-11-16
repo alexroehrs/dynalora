@@ -107,9 +107,9 @@ class Evaluator:
             out[lam] = self._choice_rows([r[None] for r in res])
         return out
 
-    def generate(self, form, lam):
+    def generate(self, form, lam, plausibility=0.0):
         """(rows, outputs) of a generation task at one factor."""
-        gen = self.tm.greedy(self.ctx, form, lam, self.spec['max_new_tokens'], self.bs)
+        gen = self.tm.greedy(self.ctx, form, lam, self.spec['max_new_tokens'], self.bs, plausibility=plausibility)
         rows, outs = [], []
         for e, (ids, ended) in zip(self.ex, gen):
             text = self.tm.tok.decode(ids, skip_special_tokens=True).strip()

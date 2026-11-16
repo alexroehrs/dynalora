@@ -366,3 +366,69 @@ def test_extend_cut_outputs(tmp_path):
     assert len(merged) == len(lo)
     m0 = merged[merged.factor == 0].set_index('item')
     assert (m0.n_tokens.reindex(e_l[e_l.factor == 0].item).values == e_l[e_l.factor == 0].n_tokens.values).all()
+
+
+# ---- plausibility constraint and throughput ------------------------------------------------------------
+def test_greedy_plausibility_constraint(tm):
+    """With the constraint every chosen token is plausible under the adapted model; a threshold of 1 gives the
+    adapter's own greedy answer; a tiny threshold gives the unconstrained answer."""
+    ex, ctx = _contexts(tm, 'samsum', n=4)
+    lam, alpha, n = 5.0, 0.9, 6
+    got = tm.greedy(ctx, 'logit', lam, n, batch_size=3, plausibility=alpha)
+    changed = False
+    for c, (ids, ended) in zip(ctx, got):
+        seq = list(c); ref = []
+        for _ in range(n):
+            x = torch.tensor([seq])
+            with torch.no_grad():
+                with tm.model.disable_adapter():
+                    yb = tm.model(input_ids=x).logits[0, -1].float()
+                ya = tm.model(input_ids=x).logits[0, -1].float()
+            y = yb + lam * (ya - yb)
+            pa = F.softmax(ya, -1)
+            changed = changed or bool(pa[y.argmax()] < alpha * pa.max())
+            y[pa < alpha * pa.max()] = float('-inf')
+            tkn = int(y.argmax())
+            assert pa[tkn] >= alpha * pa.max()
+            if tkn in tm.stop_ids:
+                break
+            ref.append(tkn); seq.append(tkn)
+        assert ids == ref
+    assert changed                                    # the constraint excluded at least one unconstrained choice
+    assert tm.greedy(ctx, 'logit', lam, n, plausibility=1.0) == tm.greedy(ctx, 'logit', 1.0, n)
+    assert tm.greedy(ctx, 'logit', lam, n, plausibility=1e-30) == tm.greedy(ctx, 'logit', lam, n)
+    with pytest.raises(ValueError):
+        tm.greedy(ctx, 'weight', 2.0, n, plausibility=0.1)
+
+
+def test_greedy_without_stop_counts_tokens(tm):
+    ex, ctx = _contexts(tm, 'samsum', n=5)
+    stats = {}
+    out = tm.greedy(ctx, 'logit', 0.5, 7, batch_size=2, stop=False, stats=stats)
+    assert stats == {'tokens': 5 * 7, 'steps': 3 * 7} and len(out) == 5
+
+
+def test_plausibility_and_throughput_scripts(tmp_path):
+    ad, sc = str(tmp_path / 'adapters'), str(tmp_path / 'level4' / 'scores')
+    _run('scripts/train_task_chat.py', '--model', 'x', '--task', 'samsum', '--adapters_dir', ad, '--smoke')
+    name = 'tiny-chat-gpt2__samsum__s42'
+    adir, out = os.path.join(ad, name), os.path.join(sc, name)
+    _run('scripts/eval_task.py', '--model', 'x', '--task', 'samsum', '--adapter_dir', adir, '--out_dir', out,
+         '--base_cache', os.path.join(sc, '_base'), '--smoke')
+    args = ['scripts/eval_plausibility.py', '--model', 'x', '--task', 'samsum', '--adapter_dir', adir, '--out_dir', out,
+            '--smoke']
+    _run(*args)
+    pl = pd.read_csv(os.path.join(out, 'plaus__logit.csv'))
+    assert set(pl.factor) == {1.5, 2.0} and (pl.alpha == 0.1).all() and len(pl) == 24
+    assert 'finished, skipped' in _run(*args)
+    th = str(tmp_path / 'level4' / 'throughput' / 'tiny.csv')
+    _run('scripts/throughput.py', '--model', 'x', '--adapter_dir', adir, '--out', th, '--smoke')
+    t = pd.read_csv(th)
+    assert set(t.config) == {'base', 'adapter', 'weight', 'logit', 'logit_plaus', 'weight_merged'}
+    assert (t.tokens == t.batch_size * 2 * 4).all() and (t.tokens_per_s > 0).all()
+    _run('scripts/analysis/summarize.py', '--results', str(tmp_path))
+    an = tmp_path / 'level4' / 'analysis'
+    p = pd.read_csv(an / 'plausibility.csv')
+    assert len(p) == 2 and p.delta_lo.le(p.delta).all() and 'delta_unconstrained' in p
+    g = pd.read_csv(an / 'throughput.csv')
+    assert g[g.config == 'adapter'].relative_to_adapter.eq(1).all()

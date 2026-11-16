@@ -28,6 +28,8 @@ Summary of the results: amplification did not improve the score of any adapter i
 | `scripts/train_task_chat.py` | trains one adapter on one task (optionally saving it at fractions of the steps) |
 | `scripts/eval_task.py` | scores an adapter on its own task or on another task along both grids, with the KL divergence to the base model |
 | `scripts/extend_cut_outputs.py` | decodes again, with a larger token budget, the generated answers that did not end |
+| `scripts/eval_plausibility.py` | logit-space amplification on the generation tasks with the plausibility constraint of contrastive decoding |
+| `scripts/throughput.py` | decoding throughput of the base model, the adapter, weight-space scaling (active and merged) and logit-space scaling |
 | `scripts/zeroshot_bench.py` | general benchmarks (requests of the lm-evaluation-harness) under both forms |
 | `scripts/analysis/summarize.py` | tables, figures and `SUMMARY.md` from the scores |
 | `scripts/analysis/paper_assets.py` | tables and figures of the paper from the analysis tables |
@@ -41,6 +43,7 @@ Summary of the results: amplification did not improve the score of any adapter i
 | `colab_run.ipynb` | the study: training, own-task scores over both grids, KL divergence, other tasks, general benchmarks, training seeds, second model, adapters saved during training | A100 |
 | `colab_gsm8k_budget.ipynb` | GSM8K answers cut by the 320-token budget at factors up to 1, decoded again with 768 tokens | A100 |
 | `colab_kl_seeds.ipynb` | KL divergence to the base model for the adapters of the other training seeds (43 and 44) of the first model | A100 |
+| `colab_extra.ipynb` | logit-space factors between 0.75 and 1 (own-task score and KL divergence), logit-space amplification with the plausibility constraint, decoding throughput | A100 |
 | `colab_analysis.ipynb` | analyses, figures and `SUMMARY.md` | CPU |
 
 The notebooks are resumable: finished adapters, factors and files are skipped when a notebook is run again.

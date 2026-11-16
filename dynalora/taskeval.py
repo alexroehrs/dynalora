@@ -15,7 +15,7 @@ of an example does not depend on the batch it is in:
 * ``choice_scores``: log-likelihood of every option of a multiple-choice item (the option with the highest
   one is the prediction, as in the lm-evaluation-harness);
 * ``greedy``: greedy decoding with key-value caches (one cache per pass) until a stop token or
-  ``max_new_tokens``.
+  ``max_new_tokens``; in logit space, optionally with the plausibility constraint of contrastive decoding.
 """
 import inspect
 
@@ -154,9 +154,17 @@ class TaskModel:
 
     # ---- greedy decoding -------------------------------------------------------------------------
     @torch.no_grad()
-    def greedy(self, contexts, form, lam, max_new_tokens, batch_size=8):
+    def greedy(self, contexts, form, lam, max_new_tokens, batch_size=8, plausibility=0.0, stop=True, stats=None):
         """Greedy continuation of every context: list of ``(token ids before the stop token, ended)``.
-        For ``form='weight'`` the weight scale is set to ``lam`` and restored afterwards."""
+        For ``form='weight'`` the weight scale is set to ``lam`` and restored afterwards.
+
+        ``plausibility`` (logit space, two passes): with a value ``a`` in (0, 1], the next token is chosen among
+        the tokens whose probability under the adapted model is at least ``a`` times that of its most likely
+        token (the plausibility constraint of contrastive decoding); 0 applies Equation 1 as written.
+        ``stop=False`` ignores the stop tokens and always decodes ``max_new_tokens`` tokens (timing runs).
+        ``stats``, if a dict, accumulates ``tokens`` (batch size times decoding steps) and ``steps``."""
+        if plausibility and not (form == 'logit' and 0 < plausibility <= 1):
+            raise ValueError('plausibility needs form="logit" and a value in (0, 1]')
         if form == 'logit':
             passes = [False] if (lam == 0 or not self.has_adapter) else [True] if lam == 1 else [False, True]
         elif form == 'weight':
@@ -165,7 +173,7 @@ class TaskModel:
                 self.set_weight_scale(lam)
         else:
             raise ValueError(form)
-        stop = torch.tensor(self.stop_ids, device=self.device)
+        stop_t = torch.tensor(self.stop_ids, device=self.device)
         out = [None] * len(contexts)
         order = sorted(range(len(contexts)), key=lambda i: -len(contexts[i]))
         try:
@@ -185,9 +193,17 @@ class TaskModel:
                         past[p] = o.past_key_values
                         ys[p] = o.logits[:, -1, :].float()
                     y = ys[passes[0]] if len(passes) == 1 else ys[False] + lam * (ys[True] - ys[False])
+                    if plausibility and len(passes) == 2:
+                        pa = F.log_softmax(ys[True], -1)
+                        y = y.masked_fill(pa < pa.max(-1, keepdim=True).values + torch.log(torch.tensor(plausibility)),
+                                          float('-inf'))
                     nxt = y.argmax(-1)
                     gen.append(nxt)
-                    done = done | torch.isin(nxt, stop)
+                    if stats is not None:
+                        stats['tokens'] = stats.get('tokens', 0) + B
+                        stats['steps'] = stats.get('steps', 0) + 1
+                    if stop:
+                        done = done | torch.isin(nxt, stop_t)
                     if bool(done.all()):
                         break
                     cur = nxt[:, None]
