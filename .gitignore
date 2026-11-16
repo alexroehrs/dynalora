@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Results and experiment outputs are not kept in this repository: they live in the results root
+# (MyDrive/dynalora_results on Google Drive, or a local copy; see docs/results_format.md).
+results/
+*.csv
+*.csv.gz
+*.log
+*.jsonl
+*.zip
+adapters/
+fig_*.pdf
+fig_*.png
+
+# Small files the code itself needs are re-included here with "!<path>". There are none at present:
+# the code reads no CSV, log or figure file from the repository.
